@@ -12,11 +12,6 @@ export const metadata: Metadata = {
   title: "Mis Gastos",
   description: "Seguimiento personal de gastos",
   manifest: "/manifest.json",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "black-translucent",
-    title: "Mis Gastos",
-  },
 };
 
 export default function RootLayout({
@@ -27,13 +22,10 @@ export default function RootLayout({
   return (
     <html lang="es">
       <head>
-        <link rel="icon" href="/favicon.ico" />
         <meta name="theme-color" content="#0f172a" />
       </head>
       <body>
-        <AuthProvider>
-          {children}
-        </AuthProvider>
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   );
