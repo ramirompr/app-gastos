@@ -2,10 +2,25 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --color-primary: #7c3aed;
+  --color-primary-dark: #6d28d9;
+  --color-secondary: #3b82f6;
+  --color-bg-dark: #0f172a;
+  --color-bg-card: #1e293b;
+  --color-bg-input: #0f172a;
+  --color-success: #10b981;
+  --color-error: #ef4444;
+}
+
 html {
   scroll-behavior: smooth;
+  background-color: var(--color-bg-dark);
+  color: white;
 }
 
 body {
-  @apply bg-gray-50 text-gray-900;
+  background-color: var(--color-bg-dark);
+  color: white;
+  font-family: system-ui, -apple-system, sans-serif;
 }

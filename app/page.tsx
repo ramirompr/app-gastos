@@ -1,50 +1,48 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/auth-context';
 
 export default function Home() {
-  const [supabaseConnected, setSupabaseConnected] = useState(false);
+  const router = useRouter();
+  const { user, loading } = useAuth();
 
   useEffect(() => {
-    // Check if Supabase environment variables are set
-    const hasSupabaseUrl = !!process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const hasSupabaseKey = !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    setSupabaseConnected(hasSupabaseUrl && hasSupabaseKey);
-  }, []);
+    if (!loading) {
+      if (user) {
+        router.push('/dashboard');
+      } else {
+        router.push('/login');
+      }
+    }
+  }, [user, loading, router]);
 
   return (
-    <main className="min-h-screen flex items-center justify-center p-4">
-      <div className="max-w-md w-full">
-        <div className="text-center">
-          <h1 className="text-4xl font-bold mb-4">App de Gastos</h1>
-          <p className="text-gray-600 mb-8">Seguimiento personal de gastos en ARS y USD</p>
-
-          <div className="bg-white rounded-lg shadow p-6 mb-8">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Supabase</span>
-                <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                  supabaseConnected
-                    ? 'bg-green-100 text-green-800'
-                    : 'bg-yellow-100 text-yellow-800'
-                }`}>
-                  {supabaseConnected ? 'Conectado' : 'Configura env vars'}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="text-sm text-gray-500">
-            <p>🚀 Próximamente:</p>
-            <ul className="mt-4 space-y-2 text-left">
-              <li>✓ Autenticación</li>
-              <li>✓ CRUD de categorías</li>
-              <li>✓ Carga de gastos</li>
-              <li>✓ Conversión ARS/USD</li>
-            </ul>
-          </div>
-        </div>
+    <div className="min-h-screen flex items-center justify-center bg-slate-950">
+      <div className="flex flex-col items-center gap-4">
+        <svg
+          className="animate-spin h-8 w-8 text-violet-600"
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+        >
+          <circle
+            className="opacity-25"
+            cx="12"
+            cy="12"
+            r="10"
+            stroke="currentColor"
+            strokeWidth="4"
+          />
+          <path
+            className="opacity-75"
+            fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+          />
+        </svg>
+        <p className="text-slate-400">Cargando...</p>
       </div>
-    </main>
+    </div>
   );
 }

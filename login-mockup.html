@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mis Gastos - Login</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --color-primary: #7c3aed; /* Violeta */
+            --color-primary-dark: #6d28d9; /* Violeta oscuro */
+            --color-secondary: #3b82f6; /* Azul */
+            --color-bg-dark: #0f172a; /* Fondo muy oscuro */
+            --color-bg-card: #1e293b; /* Fondo card */
+        }
+    </style>
+</head>
+<body style="background-color: var(--color-bg-dark);">
+    <div class="min-h-screen flex items-center justify-center p-4">
+        <div class="w-full max-w-md">
+            <!-- Header -->
+            <div class="text-center mb-8">
+                <h1 class="text-5xl font-bold text-white mb-2">Mis Gastos</h1>
+            </div>
+
+            <!-- Card Login -->
+            <div style="background-color: var(--color-bg-card);" class="rounded-lg shadow-2xl p-8 border border-slate-700">
+                <h2 class="text-2xl font-bold text-white mb-6">Iniciar sesión</h2>
+
+                <!-- Form -->
+                <form class="space-y-4">
+                    <!-- Email Input -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-2">
+                            Email
+                        </label>
+                        <input 
+                            type="email"
+                            placeholder="tu@ejemplo.com"
+                            class="w-full px-4 py-2 bg-slate-900 border border-slate-600 text-white rounded-lg placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+                        />
+                    </div>
+
+                    <!-- Password Input -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-2">
+                            Contraseña
+                        </label>
+                        <input 
+                            type="password"
+                            placeholder="••••••••"
+                            class="w-full px-4 py-2 bg-slate-900 border border-slate-600 text-white rounded-lg placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+                        />
+                    </div>
+
+                    <!-- Remember me -->
+                    <div class="flex items-center">
+                        <input 
+                            type="checkbox"
+                            id="remember"
+                            class="h-4 w-4 rounded accent-purple-500 cursor-pointer"
+                        />
+                        <label for="remember" class="ml-2 block text-sm text-slate-300 cursor-pointer">
+                            Recuérdame
+                        </label>
+                    </div>
+
+                    <!-- Login Button -->
+                    <button 
+                        type="submit"
+                        style="background-color: var(--color-primary);"
+                        class="w-full hover:opacity-90 text-white font-semibold py-2.5 rounded-lg transition duration-200 mt-6"
+                    >
+                        Iniciar sesión
+                    </button>
+                </form>
+
+                <!-- Divider -->
+                <div class="relative mt-6 mb-6">
+                    <div class="absolute inset-0 flex items-center">
+                        <div class="w-full border-t border-slate-600"></div>
+                    </div>
+                    <div class="relative flex justify-center text-sm">
+                        <span style="background-color: var(--color-bg-card);" class="px-2 text-slate-400">¿No tienes cuenta?</span>
+                    </div>
+                </div>
+
+                <!-- Register Button -->
+                <button 
+                    type="button"
+                    style="border-color: var(--color-primary);"
+                    class="w-full border text-purple-400 font-semibold py-2.5 rounded-lg hover:bg-slate-800 transition duration-200"
+                >
+                    Crear cuenta
+                </button>
+            </div>
+
+            <!-- Error State Example (Comentado - descomenta para ver) -->
+            <div style="background-color: var(--color-bg-card);" class="rounded-lg shadow-2xl p-8 border border-slate-700 mt-8 hidden" id="error-example">
+                <h2 class="text-2xl font-bold text-white mb-6">Iniciar sesión</h2>
+
+                <!-- Error Alert -->
+                <div class="mb-4 p-4 bg-red-950 border border-red-700 rounded-lg flex items-start">
+                    <svg class="w-5 h-5 text-red-400 mt-0.5 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+                    </svg>
+                    <span class="text-red-400">Email o contraseña inválidos</span>
+                </div>
+
+                <form class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-2">Email</label>
+                        <input 
+                            type="email"
+                            placeholder="tu@ejemplo.com"
+                            class="w-full px-4 py-2 bg-slate-900 border border-red-600 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
+                        />
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-2">Contraseña</label>
+                        <input 
+                            type="password"
+                            placeholder="••••••••"
+                            class="w-full px-4 py-2 bg-slate-900 border border-red-600 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
+                        />
+                    </div>
+
+                    <button 
+                        type="submit"
+                        style="background-color: var(--color-primary);"
+                        class="w-full hover:opacity-90 text-white font-semibold py-2.5 rounded-lg transition duration-200 mt-6"
+                    >
+                        Iniciar sesión
+                    </button>
+                </form>
+            </div>
+
+            <!-- Loading State Example (Comentado) -->
+            <div style="background-color: var(--color-bg-card);" class="rounded-lg shadow-2xl p-8 border border-slate-700 mt-8 hidden" id="loading-example">
+                <h2 class="text-2xl font-bold text-white mb-6">Iniciar sesión</h2>
+
+                <form class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-2">Email</label>
+                        <input 
+                            type="email"
+                            placeholder="tu@ejemplo.com"
+                            disabled
+                            class="w-full px-4 py-2 bg-slate-900 border border-slate-600 text-slate-500 rounded-lg"
+                        />
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-2">Contraseña</label>
+                        <input 
+                            type="password"
+                            placeholder="••••••••"
+                            disabled
+                            class="w-full px-4 py-2 bg-slate-900 border border-slate-600 text-slate-500 rounded-lg"
+                        />
+                    </div>
+
+                    <button 
+                        type="submit"
+                        disabled
+                        class="w-full bg-slate-700 text-white font-semibold py-2.5 rounded-lg flex items-center justify-center gap-2 mt-6 cursor-not-allowed"
+                    >
+                        <svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Iniciando sesión...
+                    </button>
+                </form>
+            </div>
+
+            <!-- Footer -->
+            <p class="text-center text-sm text-slate-500 mt-8">
+                © 2026 Mis Gastos. Todos los derechos reservados.
+            </p>
+        </div>
+    </div>
+
+    <!-- Toggle Examples -->
+    <div class="fixed bottom-4 right-4 space-y-2">
+        <button onclick="document.getElementById('error-example').classList.toggle('hidden')" class="block px-3 py-1 text-xs bg-red-600 text-white rounded font-medium hover:bg-red-700 transition">Ver Error</button>
+        <button onclick="document.getElementById('loading-example').classList.toggle('hidden')" class="block px-3 py-1 text-xs bg-yellow-600 text-white rounded font-medium hover:bg-yellow-700 transition">Ver Loading</button>
+    </div>
+</body>
+</html>
