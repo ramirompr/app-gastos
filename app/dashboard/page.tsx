@@ -1,178 +1,261 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
+import { supabase } from '@/lib/supabase';
+import { Category, Expense } from '@/lib/types';
+import { getTopLevelCategory } from '@/lib/categories';
+import { useCurrencyDisplay } from '@/lib/currency-display-context';
+import { pickAmount, formatMoney } from '@/lib/format-money';
+import { DonutChart } from '@/components/dashboard/DonutChart';
+import { AppMenu } from '@/components/layout/AppMenu';
+import { PageHeader } from '@/components/layout/PageHeader';
+import {
+  Period,
+  getRangeForPeriod,
+  getPeriodLabel,
+  shiftAnchor,
+  canGoNext,
+} from '@/lib/date-periods';
+import { format } from 'date-fns';
+
+const PERIOD_TABS: { value: Period; label: string }[] = [
+  { value: 'week', label: 'Semana' },
+  { value: 'month', label: 'Mes' },
+  { value: 'year', label: 'Año' },
+];
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { user, loading, signOut } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const { showUsd } = useCurrencyDisplay();
+
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const [isCustomRange, setIsCustomRange] = useState(false);
+  const [period, setPeriod] = useState<Period>('month');
+  const [anchor, setAnchor] = useState(new Date());
+  const [customStart, setCustomStart] = useState(format(new Date(), 'yyyy-MM-01'));
+  const [customEnd, setCustomEnd] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const pointerStartX = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!loading && !user) {
-      router.push('/login');
-    }
-  }, [user, loading, router]);
+    if (!authLoading && !user) router.push('/login');
+  }, [user, authLoading, router]);
 
-  const handleSignOut = async () => {
-    try {
-      await signOut();
-      router.push('/login');
-    } catch (err) {
-      console.error('Error signing out:', err);
+  const range = useMemo(() => {
+    if (isCustomRange) {
+      return { start: new Date(`${customStart}T00:00:00`), end: new Date(`${customEnd}T23:59:59`) };
     }
+    return getRangeForPeriod(period, anchor);
+  }, [isCustomRange, period, anchor, customStart, customEnd]);
+
+  const fetchData = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    const [{ data: cats }, { data: exps }] = await Promise.all([
+      supabase.from('categories').select('*').eq('user_id', user.id),
+      supabase
+        .from('expenses')
+        .select('*')
+        .eq('user_id', user.id)
+        .gte('date', format(range.start, 'yyyy-MM-dd'))
+        .lte('date', format(range.end, 'yyyy-MM-dd')),
+    ]);
+    setCategories(cats ?? []);
+    setExpenses(exps ?? []);
+    setLoading(false);
+  }, [user, range]);
+
+  useEffect(() => {
+    if (user) fetchData();
+  }, [user, fetchData]);
+
+  const breakdown = useMemo(() => {
+    const totals = new Map<string, { ars: number; usd: number }>();
+    for (const exp of expenses) {
+      const top = getTopLevelCategory(categories, exp.category_id);
+      if (!top) continue;
+      const prev = totals.get(top.id) ?? { ars: 0, usd: 0 };
+      totals.set(top.id, { ars: prev.ars + exp.amount_ars, usd: prev.usd + exp.amount_usd });
+    }
+    const total = Array.from(totals.values()).reduce(
+      (sum, t) => sum + pickAmount(t.ars, t.usd, showUsd),
+      0
+    );
+    return Array.from(totals.entries())
+      .map(([categoryId, t]) => {
+        const cat = categories.find((c) => c.id === categoryId)!;
+        const amount = pickAmount(t.ars, t.usd, showUsd);
+        return {
+          category: cat,
+          amount,
+          percent: total > 0 ? Math.round((amount / total) * 100) : 0,
+        };
+      })
+      .sort((a, b) => b.amount - a.amount);
+  }, [expenses, categories, showUsd]);
+
+  const total = breakdown.reduce((sum, b) => sum + b.amount, 0);
+
+  const handlePrev = () => setAnchor((a) => shiftAnchor(period, a, -1));
+  const handleNext = () => {
+    if (canGoNext(period, anchor)) setAnchor((a) => shiftAnchor(period, a, 1));
   };
 
-  if (loading) {
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (isCustomRange) return;
+    pointerStartX.current = e.clientX;
+  };
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (pointerStartX.current === null) return;
+    const deltaX = e.clientX - pointerStartX.current;
+    pointerStartX.current = null;
+    if (Math.abs(deltaX) < 40) return;
+    if (deltaX > 0) handlePrev();
+    else handleNext();
+  };
+
+  if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-950">
-        <div className="flex flex-col items-center gap-4">
-          <svg
-            className="animate-spin h-8 w-8 text-violet-600"
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-          >
-            <circle
-              className="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              strokeWidth="4"
-            />
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-            />
-          </svg>
-          <p className="text-slate-400">Cargando...</p>
-        </div>
+        <div className="animate-spin h-8 w-8 border-2 border-violet-600 border-t-transparent rounded-full" />
       </div>
     );
   }
 
-  if (!user) {
-    return null;
-  }
+  if (!user) return null;
 
   return (
-    <div className="min-h-screen bg-slate-950 p-4 md:p-6">
-      <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-          <div>
-            <h1 className="text-4xl md:text-5xl font-bold text-white mb-2">
-              Mis Gastos
-            </h1>
-            <p className="text-slate-400">
-              Bienvenido, {user.email}
-            </p>
-          </div>
+    <div className="min-h-screen bg-slate-950 pb-24">
+      <PageHeader title="Mis Gastos" onMenu={() => setMenuOpen(true)} />
+
+      {/* Period tabs */}
+      <div className="px-4 flex gap-2 justify-center mb-4">
+        {PERIOD_TABS.map((tab) => (
           <button
-            onClick={handleSignOut}
-            className="w-full md:w-auto px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition duration-200"
+            key={tab.value}
+            onClick={() => {
+              setIsCustomRange(false);
+              setPeriod(tab.value);
+              setAnchor(new Date());
+            }}
+            className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
+              !isCustomRange && period === tab.value
+                ? 'bg-violet-600 text-white'
+                : 'bg-slate-800 text-slate-400'
+            }`}
           >
-            Cerrar sesión
+            {tab.label}
+          </button>
+        ))}
+        <button
+          onClick={() => setIsCustomRange(true)}
+          className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
+            isCustomRange ? 'bg-violet-600 text-white' : 'bg-slate-800 text-slate-400'
+          }`}
+        >
+          Período
+        </button>
+      </div>
+
+      {/* Period navigation */}
+      {isCustomRange ? (
+        <div className="px-4 flex items-center gap-2 mb-6">
+          <input
+            type="date"
+            value={customStart}
+            onChange={(e) => setCustomStart(e.target.value)}
+            className="flex-1 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm focus:border-violet-500 focus:outline-none"
+          />
+          <span className="text-slate-500">–</span>
+          <input
+            type="date"
+            value={customEnd}
+            onChange={(e) => setCustomEnd(e.target.value)}
+            className="flex-1 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm focus:border-violet-500 focus:outline-none"
+          />
+        </div>
+      ) : (
+        <div
+          className="relative flex items-center justify-between px-8 mb-6 h-10 select-none touch-pan-y"
+          onPointerDown={handlePointerDown}
+          onPointerUp={handlePointerUp}
+        >
+          <button
+            onClick={handlePrev}
+            className="text-slate-400 hover:text-white p-2 text-lg z-10"
+          >
+            ‹
+          </button>
+          <p className="absolute inset-0 flex items-center justify-center text-white font-medium underline underline-offset-4 pointer-events-none">
+            {getPeriodLabel(period, anchor)}
+          </p>
+          <button
+            onClick={handleNext}
+            disabled={!canGoNext(period, anchor)}
+            className="text-slate-400 hover:text-white disabled:opacity-0 p-2 text-lg z-10"
+          >
+            ›
           </button>
         </div>
+      )}
 
-        {/* Dashboard Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-          {/* Categories Card */}
-          <Link
-            href="/dashboard/categories"
-            className="bg-slate-800 border border-slate-700 hover:border-violet-600 rounded-lg p-6 md:p-8 transition-all group"
-          >
-            <div className="flex items-center justify-center h-32 md:h-40">
-              <div className="text-center">
-                <div className="text-5xl mb-4 group-hover:scale-110 transition-transform">🗂️</div>
-                <p className="text-white font-semibold">Categorías</p>
-                <p className="text-slate-500 text-xs mt-1">Organizá tus gastos</p>
-              </div>
-            </div>
-          </Link>
-
-          {/* Coming Soon Card */}
-          <div className="bg-slate-800 border border-slate-700 rounded-lg p-6 md:p-8">
-            <div className="flex items-center justify-center h-32 md:h-40">
-              <div className="text-center">
-                <svg
-                  className="w-12 h-12 md:w-16 md:h-16 text-slate-600 mx-auto mb-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-                <p className="text-slate-500 text-sm font-medium">
-                  Próximamente
-                </p>
-              </div>
-            </div>
+      {/* Donut chart */}
+      <div
+        className="flex justify-center mb-6 touch-pan-y select-none"
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
+      >
+        {loading ? (
+          <div className="w-[220px] h-[220px] flex items-center justify-center">
+            <div className="animate-spin h-8 w-8 border-2 border-violet-600 border-t-transparent rounded-full" />
           </div>
-
-          {/* Coming Soon Card */}
-          <div className="bg-slate-800 border border-slate-700 rounded-lg p-6 md:p-8">
-            <div className="flex items-center justify-center h-32 md:h-40">
-              <div className="text-center">
-                <svg
-                  className="w-12 h-12 md:w-16 md:h-16 text-slate-600 mx-auto mb-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M13 10V3L4 14h7v7l9-11h-7z"
-                  />
-                </svg>
-                <p className="text-slate-500 text-sm font-medium">
-                  Próximamente
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Info Section */}
-        <div className="mt-8 md:mt-12 p-6 md:p-8 bg-slate-800 border border-slate-700 rounded-lg">
-          <h2 className="text-xl md:text-2xl font-bold text-white mb-4">
-            🚀 Próximamente
-          </h2>
-          <ul className="space-y-2 text-slate-300">
-            <li className="flex items-start gap-3">
-              <span className="text-violet-500 mt-1">✓</span>
-              <span>Gestión de categorías con subcategorías</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="text-violet-500 mt-1">✓</span>
-              <span>Carga de gastos en ARS y USD</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="text-violet-500 mt-1">✓</span>
-              <span>Conversión automática de monedas</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="text-violet-500 mt-1">✓</span>
-              <span>Seguimiento de gastos compartidos con novia</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="text-violet-500 mt-1">✓</span>
-              <span>Reportes y análisis</span>
-            </li>
-          </ul>
-        </div>
+        ) : (
+          <DonutChart
+            slices={breakdown.map((b) => ({ color: b.category.color, value: b.amount }))}
+            centerLabel={formatMoney(total, showUsd)}
+            onAddClick={() => router.push('/dashboard/expenses/new')}
+          />
+        )}
       </div>
+
+      {/* Category breakdown */}
+      <div className="px-4 flex flex-col gap-3">
+        {!loading && breakdown.length === 0 && (
+          <p className="text-center text-slate-500 text-sm py-12">
+            No hay gastos cargados en este período.
+          </p>
+        )}
+        {breakdown.map(({ category, amount, percent }) => (
+          <div
+            key={category.id}
+            onClick={() =>
+              router.push(
+                `/dashboard/expenses?categoryId=${category.id}&start=${format(range.start, 'yyyy-MM-dd')}&end=${format(range.end, 'yyyy-MM-dd')}`
+              )
+            }
+            className="flex items-center gap-3 bg-slate-800/60 rounded-xl px-4 py-3 cursor-pointer hover:bg-slate-800 active:scale-[0.98] transition-all"
+          >
+            <div
+              className="w-10 h-10 rounded-full flex items-center justify-center text-lg flex-shrink-0"
+              style={{ backgroundColor: category.color }}
+            >
+              {category.icon}
+            </div>
+            <p className="flex-1 text-white text-sm font-medium">{category.name}</p>
+            <p className="text-slate-500 text-sm w-10 text-right">{percent} %</p>
+            <p className="text-white text-sm font-medium w-28 text-right">{formatMoney(amount, showUsd)}</p>
+          </div>
+        ))}
+      </div>
+
+      <AppMenu open={menuOpen} onClose={() => setMenuOpen(false)} />
     </div>
   );
 }

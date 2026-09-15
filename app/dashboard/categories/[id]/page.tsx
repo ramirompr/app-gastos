@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { Category } from '@/lib/types';
@@ -12,12 +12,15 @@ import { PlusIcon } from '@/components/icons/PlusIcon';
 
 type ActionSheet =
   | { type: 'menu'; category: Category }
-  | { type: 'deleteConfirm'; category: Category; subCount: number };
+  | { type: 'deleteConfirm'; category: Category };
 
-export default function CategoriesPage() {
+export default function SubcategoriesPage() {
   const router = useRouter();
+  const { id } = useParams<{ id: string }>();
   const { user, loading: authLoading } = useAuth();
-  const [allCategories, setAllCategories] = useState<Category[]>([]);
+
+  const [parent, setParent] = useState<Category | null>(null);
+  const [subcategories, setSubcategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
@@ -29,26 +32,24 @@ export default function CategoriesPage() {
     if (!authLoading && !user) router.push('/login');
   }, [user, authLoading, router]);
 
-  const fetchCategories = useCallback(async () => {
-    if (!user) return;
-    const { data, error } = await supabase
-      .from('categories')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: true });
-    if (!error && data) setAllCategories(data);
+  const fetchData = useCallback(async () => {
+    if (!user || !id) return;
+    const [{ data: parentData }, { data: subsData }] = await Promise.all([
+      supabase.from('categories').select('*').eq('id', id).eq('user_id', user.id).single(),
+      supabase.from('categories').select('*').eq('parent_id', id).order('created_at', { ascending: true }),
+    ]);
+    if (!parentData) { router.push('/dashboard/categories'); return; }
+    setParent(parentData);
+    setSubcategories(subsData ?? []);
     setLoading(false);
-  }, [user]);
+  }, [user, id, router]);
 
   useEffect(() => {
-    if (user) fetchCategories();
-  }, [user, fetchCategories]);
-
-  const topLevel = allCategories.filter((c) => !c.parent_id);
-  const subCount = (catId: string) => allCategories.filter((c) => c.parent_id === catId).length;
+    if (user) fetchData();
+  }, [user, fetchData]);
 
   const handleSaved = (saved: Category) => {
-    setAllCategories((prev) => {
+    setSubcategories((prev) => {
       const exists = prev.find((c) => c.id === saved.id);
       return exists ? prev.map((c) => (c.id === saved.id ? saved : c)) : [...prev, saved];
     });
@@ -61,7 +62,7 @@ export default function CategoriesPage() {
     try {
       const { error } = await supabase.from('categories').delete().eq('id', category.id);
       if (error) throw error;
-      setAllCategories((prev) => prev.filter((c) => c.id !== category.id && c.parent_id !== category.id));
+      setSubcategories((prev) => prev.filter((c) => c.id !== category.id));
       setActionSheet(null);
     } catch {
       // keep sheet open on error
@@ -83,63 +84,66 @@ export default function CategoriesPage() {
     );
   }
 
-  if (!user) return null;
+  if (!user || !parent) return null;
 
   return (
     <div className="min-h-screen bg-slate-950 pb-24">
       <PageHeader
-        title="Mis Categorías"
-        onBack={() => router.push('/dashboard')}
+        title="Subcategorías"
+        onBack={() => router.push('/dashboard/categories')}
         onMenu={() => setMenuOpen(true)}
       />
-      <p className="text-slate-500 text-sm text-center px-4 mb-2">
-        {topLevel.length} {topLevel.length === 1 ? 'categoría' : 'categorías'}
-      </p>
+      <div className="px-4 pb-4">
+        {/* Parent category info */}
+        <div className="flex items-center gap-4 justify-center">
+          <div
+            className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shadow-lg flex-shrink-0"
+            style={{ backgroundColor: parent.color }}
+          >
+            {parent.icon}
+          </div>
+          <div>
+            <p className="text-white font-semibold">{parent.name}</p>
+            <p className="text-slate-500 text-sm">
+              {subcategories.length}{' '}
+              {subcategories.length === 1 ? 'subcategoría' : 'subcategorías'}
+            </p>
+          </div>
+        </div>
+      </div>
 
       <div className="px-4">
-        {topLevel.length === 0 ? (
+        {subcategories.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
-            <div className="text-6xl mb-4">🗂️</div>
-            <p className="text-slate-400 mb-1 font-medium">No tenés categorías todavía</p>
-            <p className="text-slate-600 text-sm">Tocá el + para crear la primera</p>
+            <div className="text-6xl mb-4">📂</div>
+            <p className="text-slate-400 mb-1 font-medium">Sin subcategorías</p>
+            <p className="text-slate-600 text-sm">Tocá el + para agregar una</p>
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {topLevel.map((cat) => {
-              const subs = subCount(cat.id);
-              return (
-                <div
-                  key={cat.id}
-                  onClick={() => router.push(`/dashboard/categories/${cat.id}`)}
-                  className="relative bg-slate-800 border border-slate-700/50 rounded-2xl p-4 flex flex-col items-center gap-3 hover:border-slate-600 active:scale-95 transition-all cursor-pointer"
+            {subcategories.map((cat) => (
+              <div
+                key={cat.id}
+                className="relative bg-slate-800 border border-slate-700/50 rounded-2xl p-4 flex flex-col items-center gap-3 hover:border-slate-600 active:scale-95 transition-all"
+              >
+                <button
+                  onClick={(e) => openMenu(e, cat)}
+                  className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center text-slate-500 hover:text-slate-300 rounded-lg hover:bg-slate-700 transition text-lg leading-none"
                 >
-                  {/* ⋮ menu button */}
-                  <button
-                    onClick={(e) => openMenu(e, cat)}
-                    className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center text-slate-500 hover:text-slate-300 rounded-lg hover:bg-slate-700 transition text-lg leading-none"
-                  >
-                    ⋮
-                  </button>
+                  ⋮
+                </button>
 
-                  <div
-                    className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shadow-lg"
-                    style={{ backgroundColor: cat.color }}
-                  >
-                    {cat.icon}
-                  </div>
-                  <div className="text-center">
-                    <p className="text-white font-medium text-sm leading-tight">{cat.name}</p>
-                    {subs > 0 ? (
-                      <p className="text-slate-500 text-xs mt-0.5">
-                        {subs} {subs === 1 ? 'subcategoría' : 'subcategorías'}
-                      </p>
-                    ) : (
-                      <p className="text-slate-600 text-xs mt-0.5">Sin subcategorías</p>
-                    )}
-                  </div>
+                <div
+                  className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shadow-lg"
+                  style={{ backgroundColor: cat.color }}
+                >
+                  {cat.icon}
                 </div>
-              );
-            })}
+                <p className="text-white font-medium text-sm text-center leading-tight">
+                  {cat.name}
+                </p>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -148,31 +152,30 @@ export default function CategoriesPage() {
       <button
         onClick={() => setShowCreate(true)}
         className="fixed bottom-6 right-6 w-14 h-14 bg-violet-600 hover:bg-violet-700 rounded-full flex items-center justify-center text-white shadow-xl active:scale-90 transition-all"
-        aria-label="Nueva categoría"
+        aria-label="Nueva subcategoría"
       >
         <PlusIcon size={26} />
       </button>
 
-      {/* Create modal */}
       {showCreate && (
         <CategoryFormModal
-          parentCategories={topLevel}
+          fixedParentId={id}
+          parentCategories={[]}
           onClose={() => setShowCreate(false)}
           onSaved={handleSaved}
         />
       )}
 
-      {/* Edit modal */}
       {editingCategory && (
         <CategoryFormModal
           category={editingCategory}
-          parentCategories={topLevel.filter((c) => c.id !== editingCategory.id)}
+          fixedParentId={id}
+          parentCategories={[]}
           onClose={() => setEditingCategory(null)}
           onSaved={handleSaved}
         />
       )}
 
-      {/* Action sheet backdrop */}
       {actionSheet && (
         <div
           className="fixed inset-0 z-40 bg-black/60"
@@ -180,14 +183,12 @@ export default function CategoriesPage() {
         />
       )}
 
-      {/* Action sheet: menu */}
       {actionSheet?.type === 'menu' && (
         <div className="fixed bottom-0 left-0 right-0 z-50 bg-slate-900 rounded-t-2xl border-t border-slate-800">
           <div className="flex justify-center pt-3 pb-1">
             <div className="w-10 h-1 bg-slate-700 rounded-full" />
           </div>
           <div className="px-6 pt-3 pb-10">
-            {/* Category header */}
             <div className="flex items-center gap-3 mb-6">
               <div
                 className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
@@ -211,11 +212,7 @@ export default function CategoriesPage() {
 
             <button
               onClick={() =>
-                setActionSheet({
-                  type: 'deleteConfirm',
-                  category: actionSheet.category,
-                  subCount: subCount(actionSheet.category.id),
-                })
+                setActionSheet({ type: 'deleteConfirm', category: actionSheet.category })
               }
               className="w-full flex items-center gap-4 px-4 py-4 rounded-xl hover:bg-slate-800 transition text-left"
             >
@@ -226,7 +223,6 @@ export default function CategoriesPage() {
         </div>
       )}
 
-      {/* Action sheet: delete confirm */}
       {actionSheet?.type === 'deleteConfirm' && (
         <div className="fixed bottom-0 left-0 right-0 z-50 bg-slate-900 rounded-t-2xl border-t border-slate-800">
           <div className="flex justify-center pt-3 pb-1">
@@ -236,12 +232,6 @@ export default function CategoriesPage() {
             <p className="text-white font-semibold text-lg mb-2">
               ¿Eliminar {actionSheet.category.name}?
             </p>
-            {actionSheet.subCount > 0 && (
-              <p className="text-amber-400 text-sm mb-4">
-                También se van a eliminar sus {actionSheet.subCount}{' '}
-                {actionSheet.subCount === 1 ? 'subcategoría' : 'subcategorías'}.
-              </p>
-            )}
             <p className="text-slate-400 text-sm mb-6">Esta acción no se puede deshacer.</p>
             <div className="flex gap-3">
               <button

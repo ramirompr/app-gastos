@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { AuthProvider } from "@/lib/auth-context";
+import { CurrencyDisplayProvider } from "@/lib/currency-display-context";
 import "./globals.css";
 
 export const viewport: Viewport = {
@@ -25,7 +26,9 @@ export default function RootLayout({
         <meta name="theme-color" content="#0f172a" />
       </head>
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <CurrencyDisplayProvider>{children}</CurrencyDisplayProvider>
+        </AuthProvider>
       </body>
     </html>
   );

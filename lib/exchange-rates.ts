@@ -1,93 +1,91 @@
 import { supabase } from './supabase';
-import type { ExchangeRate } from './types';
-import { format } from 'date-fns';
+import { format, isBefore, startOfDay, subDays } from 'date-fns';
 
 /**
- * Obtiene la cotización USD -> ARS para una fecha específica.
- * Primero intenta obtenerla del caché (exchange_rates).
- * Si no existe, la obtiene de una API externa y la guarda.
+ * Obtiene la cotización de venta del dólar oficial (USD -> ARS) para una fecha.
+ * Primero busca en caché (exchange_rates). Si no está, la busca en la API
+ * correspondiente: cotización del día para hoy/futuro, o serie histórica para
+ * fechas pasadas (así un gasto cargado con fecha atrasada usa el dólar de ese día).
  */
 export async function getExchangeRate(date: Date = new Date()): Promise<number> {
   const dateStr = format(date, 'yyyy-MM-dd');
 
-  try {
-    // 1. Buscar en caché
-    const { data: cached } = await supabase
-      .from('exchange_rates')
-      .select('usd_to_ars')
-      .eq('date', dateStr)
-      .single();
+  const { data: cached } = await supabase
+    .from('exchange_rates')
+    .select('usd_to_ars')
+    .eq('date', dateStr)
+    .single();
 
-    if (cached) {
-      return cached.usd_to_ars;
-    }
-
-    // 2. Si no está en caché, obtener de API
-    const rate = await fetchExchangeRateFromAPI();
-
-    // 3. Guardar en caché
-    await supabase.from('exchange_rates').insert({
-      date: dateStr,
-      usd_to_ars: rate,
-      fetched_at: new Date().toISOString(),
-    });
-
-    return rate;
-  } catch (error) {
-    console.error('Error getting exchange rate:', error);
-    // Fallback a un valor aproximado (no ideal, pero es un backup)
-    return 1000; // Valor muy aproximado, el usuario debería investigar
+  if (cached) {
+    return cached.usd_to_ars;
   }
+
+  const isPast = isBefore(startOfDay(date), startOfDay(new Date()));
+  const rate = isPast ? await fetchHistoricalRate(date) : await fetchCurrentRate();
+
+  await supabase.from('exchange_rates').insert({
+    date: dateStr,
+    usd_to_ars: rate,
+    fetched_at: new Date().toISOString(),
+  });
+
+  return rate;
 }
 
 /**
- * Obtiene la cotización de una API externa.
- * Intenta primero con Bluelytics (económico oficial), luego con dolarapi.
+ * Cotización de venta del dólar oficial vigente hoy.
  */
-async function fetchExchangeRateFromAPI(): Promise<number> {
-  try {
-    // Intentar Bluelytics primero (proporciona cotizaciones oficiales y blue)
-    const response = await fetch('https://api.bluelytics.com.ar/json/last');
-    if (response.ok) {
-      const data = await response.json();
-      // Usa el promedio entre oficial y blue, o solo oficial
-      // data.last.compra_oficial, data.last.venta_oficial, etc.
-      const official = data.last?.venta_oficial || data.last?.compra_oficial;
-      if (official) {
-        return official;
-      }
-    }
-  } catch (error) {
-    console.log('Bluelytics API failed, trying dolarapi...');
+async function fetchCurrentRate(): Promise<number> {
+  const response = await fetch('https://dolarapi.com/v1/dolares/oficial');
+  if (!response.ok) {
+    throw new Error('No se pudo obtener la cotización actual del dólar oficial');
   }
-
-  try {
-    // Fallback a dolarapi.com
-    const response = await fetch('https://api.dolarapi.com/v1/cotizaciones/oficial');
-    if (response.ok) {
-      const data = await response.json();
-      return data.venta || data.compra;
-    }
-  } catch (error) {
-    console.log('dolarapi.com also failed');
+  const data = await response.json();
+  if (!data?.venta) {
+    throw new Error('Respuesta inválida de dolarapi.com');
   }
-
-  throw new Error('No se pudo obtener la cotización del dólar');
+  return data.venta;
 }
 
 /**
- * Convierte un monto de una moneda a otra usando la cotización del día.
+ * Cotización de venta del dólar oficial en una fecha pasada.
+ * Si ese día no tiene registro (fin de semana/feriado sin cierre propio),
+ * retrocede día a día hasta encontrar el último dato disponible.
+ */
+async function fetchHistoricalRate(date: Date, attemptsLeft = 7): Promise<number> {
+  if (attemptsLeft <= 0) {
+    throw new Error('No se pudo obtener la cotización histórica del dólar oficial');
+  }
+
+  const dateStr = format(date, 'yyyy/MM/dd');
+  const response = await fetch(
+    `https://api.argentinadatos.com/v1/cotizaciones/dolares/oficial/${dateStr}`
+  );
+
+  if (response.ok) {
+    const data = await response.json();
+    if (data?.venta) {
+      return data.venta;
+    }
+  }
+
+  return fetchHistoricalRate(subDays(date, 1), attemptsLeft - 1);
+}
+
+/**
+ * Convierte un monto de una moneda a otra usando la cotización de una fecha dada.
  */
 export async function convertCurrency(
   amount: number,
   fromCurrency: 'ARS' | 'USD',
-  toCurrency: 'ARS' | 'USD'
+  toCurrency: 'ARS' | 'USD',
+  date: Date = new Date()
 ): Promise<{ converted: number; rate: number }> {
   if (fromCurrency === toCurrency) {
     return { converted: amount, rate: 1 };
   }
 
-  const rate = await getExchangeRate();
+  const rate = await getExchangeRate(date);
 
   if (fromCurrency === 'USD' && toCurrency === 'ARS') {
     return { converted: amount * rate, rate };
@@ -101,14 +99,15 @@ export async function convertCurrency(
 }
 
 /**
- * Calcula ambos montos (ARS y USD) para un gasto.
+ * Calcula ambos montos (ARS y USD) para un gasto, usando la cotización de su fecha.
  * Retorna { amount_ars, amount_usd, exchange_rate_used }
  */
 export async function calculateAmountsInBothCurrencies(
   amount: number,
-  currency: 'ARS' | 'USD'
+  currency: 'ARS' | 'USD',
+  date: Date = new Date()
 ): Promise<{ amount_ars: number; amount_usd: number; exchange_rate_used: number }> {
-  const rate = await getExchangeRate();
+  const rate = await getExchangeRate(date);
 
   if (currency === 'ARS') {
     return {

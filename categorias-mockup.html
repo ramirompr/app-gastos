@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Categorías - App de Gastos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: linear-gradient(135deg, #0f172a 0%, #1a1f3a 100%);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
+
+        .icon-grid-item {
+            @apply w-14 h-14 rounded-xl flex items-center justify-center text-2xl cursor-pointer transition-all hover:scale-110 hover:shadow-lg border-2 border-transparent;
+        }
+
+        .icon-grid-item.selected {
+            @apply border-violet-500 scale-110;
+        }
+
+        .color-grid-item {
+            @apply w-12 h-12 rounded-lg cursor-pointer transition-all hover:scale-110 hover:shadow-lg border-2 border-transparent;
+        }
+
+        .color-grid-item.selected {
+            @apply border-white scale-110 shadow-xl;
+        }
+
+        .tabs-container {
+            @apply flex gap-2 p-1 bg-slate-800/50 rounded-xl w-full;
+        }
+
+        .tab-button {
+            @apply flex-1 px-4 py-2 rounded-lg text-slate-400 font-medium transition-all text-center;
+        }
+
+        .tab-button.active {
+            @apply bg-violet-600 text-white;
+        }
+
+        .preview-card {
+            @apply bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-8 border border-slate-700 shadow-xl flex flex-col items-center justify-center;
+        }
+
+        .icon-preview {
+            @apply text-7xl mb-4 drop-shadow-lg;
+        }
+
+        .scroll-container {
+            @apply overflow-y-auto max-h-96 pr-2;
+        }
+
+        .scroll-container::-webkit-scrollbar {
+            @apply w-2;
+        }
+
+        .scroll-container::-webkit-scrollbar-track {
+            @apply bg-slate-700 rounded-full;
+        }
+
+        .scroll-container::-webkit-scrollbar-thumb {
+            @apply bg-violet-600 rounded-full hover:bg-violet-500;
+        }
+    </style>
+</head>
+<body class="text-slate-300 p-4 md:p-8">
+    <div class="max-w-6xl mx-auto">
+        <!-- Header -->
+        <div class="mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-white mb-2">Mis Categorías</h1>
+            <p class="text-slate-400">Organiza tus gastos de forma visual</p>
+        </div>
+
+        <!-- Grid de Categorías Existentes -->
+        <div class="mb-12">
+            <h2 class="text-lg font-semibold text-white mb-4">Categorías Activas</h2>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <!-- Categoria 1 -->
+                <div class="group bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 border border-slate-700 hover:border-violet-600 transition-all hover:shadow-xl">
+                    <div class="flex items-center gap-4">
+                        <div class="w-16 h-16 bg-orange-500 rounded-2xl flex items-center justify-center text-3xl shadow-lg group-hover:scale-110 transition-transform">
+                            🍕
+                        </div>
+                        <div>
+                            <h3 class="text-white font-semibold text-lg">Comida</h3>
+                            <p class="text-slate-400 text-sm">12 gastos</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Categoria 2 -->
+                <div class="group bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 border border-slate-700 hover:border-violet-600 transition-all hover:shadow-xl">
+                    <div class="flex items-center gap-4">
+                        <div class="w-16 h-16 bg-blue-500 rounded-2xl flex items-center justify-center text-3xl shadow-lg group-hover:scale-110 transition-transform">
+                            🚗
+                        </div>
+                        <div>
+                            <h3 class="text-white font-semibold text-lg">Transporte</h3>
+                            <p class="text-slate-400 text-sm">8 gastos</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Categoria 3 -->
+                <div class="group bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 border border-slate-700 hover:border-violet-600 transition-all hover:shadow-xl">
+                    <div class="flex items-center gap-4">
+                        <div class="w-16 h-16 bg-purple-500 rounded-2xl flex items-center justify-center text-3xl shadow-lg group-hover:scale-110 transition-transform">
+                            🎮
+                        </div>
+                        <div>
+                            <h3 class="text-white font-semibold text-lg">Entretenimiento</h3>
+                            <p class="text-slate-400 text-sm">5 gastos</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Categoria 4 -->
+                <div class="group bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 border border-slate-700 hover:border-violet-600 transition-all hover:shadow-xl">
+                    <div class="flex items-center gap-4">
+                        <div class="w-16 h-16 bg-green-500 rounded-2xl flex items-center justify-center text-3xl shadow-lg group-hover:scale-110 transition-transform">
+                            🏠
+                        </div>
+                        <div>
+                            <h3 class="text-white font-semibold text-lg">Casa</h3>
+                            <p class="text-slate-400 text-sm">3 gastos</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Nueva Categoría Modal -->
+        <div class="mb-8">
+            <h2 class="text-lg font-semibold text-white mb-4">Crear Nueva Categoría</h2>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Panel Izquierdo: Selección -->
+            <div class="lg:col-span-2">
+                <div class="bg-slate-800/50 rounded-2xl p-6 border border-slate-700">
+                    <!-- Nombre de la Categoría -->
+                    <div class="mb-6">
+                        <label class="block text-sm font-semibold text-slate-300 mb-2">Nombre</label>
+                        <input 
+                            type="text" 
+                            placeholder="Ej: Suscripciones" 
+                            class="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:border-violet-500 focus:outline-none transition"
+                        >
+                    </div>
+
+                    <!-- Tabs -->
+                    <div class="tabs-container mb-6">
+                        <button class="tab-button active" onclick="switchTab('icons')">🎨 Ícono</button>
+                        <button class="tab-button" onclick="switchTab('colors')">🌈 Color</button>
+                    </div>
+
+                    <!-- Tab: Iconos -->
+                    <div id="icons-tab" class="mb-6">
+                        <div class="mb-3">
+                            <label class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Selecciona un ícono</label>
+                        </div>
+                        <div class="scroll-container">
+                            <div class="grid grid-cols-5 sm:grid-cols-6 md:grid-cols-8 gap-3">
+                                <!-- Comida -->
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Pizza">🍕</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Burger">🍔</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Taco">🌮</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Sushi">🍣</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Café">☕</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Bebida">🥤</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Cerveza">🍺</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Vino">🍷</button>
+
+                                <!-- Transporte -->
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Auto">🚗</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Taxi">🚕</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Bus">🚌</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Tren">🚂</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Avión">✈️</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Bici">🚴</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Nafta">⛽</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Parking">🅿️</button>
+
+                                <!-- Entretenimiento -->
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Gaming">🎮</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Película">🎬</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Música">🎵</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Concierto">🎤</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Deporte">⚽</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Gym">🏋️</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Yoga">🧘</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Lectura">📚</button>
+
+                                <!-- Casa -->
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Casa">🏠</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Muebles">🛋️</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Herramientas">🔧</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Limpieza">🧹</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Electricidad">⚡</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Plomería">🚿</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Luz">💡</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Mascota">🐕</button>
+
+                                <!-- Compras -->
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Shopping">🛍️</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Ropa">👕</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Zapatos">👞</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Belleza">💄</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Perfume">💐</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Accesorios">💍</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Reloj">⌚</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Electrónica">📱</button>
+
+                                <!-- Salud -->
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Médico">⚕️</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Farmacia">💊</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Dentista">🦷</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Hospital">🏥</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Salud">❤️</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Vitaminas">💪</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Emergencia">🚨</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Dinero">💰</button>
+
+                                <!-- Finanzas & Otros -->
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Banco">🏦</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Inversión">📈</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Crédito">💳</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Regalos">🎁</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Viajes">🧳</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Trabajo">💼</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Educación">🎓</button>
+                                <button class="icon-grid-item bg-slate-900 hover:bg-slate-800" title="Otros">❓</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab: Colores -->
+                    <div id="colors-tab" class="mb-6 hidden">
+                        <div class="mb-3">
+                            <label class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Selecciona un color</label>
+                        </div>
+                        <div class="scroll-container">
+                            <div class="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-3">
+                                <!-- Reds -->
+                                <button class="color-grid-item" style="background-color: #f87171;" title="Rojo Claro"></button>
+                                <button class="color-grid-item" style="background-color: #ef4444;" title="Rojo"></button>
+                                <button class="color-grid-item" style="background-color: #dc2626;" title="Rojo Oscuro"></button>
+                                <button class="color-grid-item" style="background-color: #fb7185;" title="Rosa Claro"></button>
+                                <button class="color-grid-item" style="background-color: #f43f5e;" title="Rosa"></button>
+                                <button class="color-grid-item" style="background-color: #e11d48;" title="Rosa Oscuro"></button>
+                                <button class="color-grid-item" style="background-color: #f472b6;" title="Pink Claro"></button>
+                                <button class="color-grid-item" style="background-color: #ec4899;" title="Pink"></button>
+                                <button class="color-grid-item" style="background-color: #be185d;" title="Pink Oscuro"></button>
+                                <button class="color-grid-item" style="background-color: #d946ef;" title="Fucsia"></button>
+
+                                <!-- Oranges -->
+                                <button class="color-grid-item" style="background-color: #fed7aa;" title="Naranja Muy Claro"></button>
+                                <button class="color-grid-item" style="background-color: #fdba74;" title="Naranja Claro"></button>
+                                <button class="color-grid-item" style="background-color: #fb923c;" title="Naranja"></button>
+                                <button class="color-grid-item" style="background-color: #f97316;" title="Naranja Oscuro"></button>
+                                <button class="color-grid-item" style="background-color: #fcd34d;" title="Ámbar Claro"></button>
+                                <button class="color-grid-item" style="background-color: #fbbf24;" title="Ámbar"></button>
+                                <button class="color-grid-item" style="background-color: #f59e0b;" title="Ámbar Oscuro"></button>
+                                <button class="color-grid-item" style="background-color: #fde047;" title="Amarillo"></button>
+                                <button class="color-grid-item" style="background-color: #facc15;" title="Amarillo Brillante"></button>
+                                <button class="color-grid-item" style="background-color: #eab308;" title="Amarillo Oscuro"></button>
+
+                                <!-- Greens -->
+                                <button class="color-grid-item" style="background-color: #bfdbfe;" title="Verde Muy Claro"></button>
+                                <button class="color-grid-item" style="background-color: #86efac;" title="Verde Claro"></button>
+                                <button class="color-grid-item" style="background-color: #4ade80;" title="Verde"></button>
+                                <button class="color-grid-item" style="background-color: #22c55e;" title="Verde Oscuro"></button>
+                                <button class="color-grid-item" style="background-color: #10b981;" title="Esmeralda"></button>
+                                <button class="color-grid-item" style="background-color: #059669;" title="Esmeralda Oscuro"></button>
+                                <button class="color-grid-item" style="background-color: #14b8a6;" title="Turquesa"></button>
+                                <button class="color-grid-item" style="background-color: #06b6d4;" title="Cyan"></button>
+                                <button class="color-grid-item" style="background-color: #0ea5e9;" title="Cielo"></button>
+                                <button class="color-grid-item" style="background-color: #3b82f6;" title="Azul Claro"></button>
+
+                                <!-- Blues -->
+                                <button class="color-grid-item" style="background-color: #1d4ed8;" title="Azul"></button>
+                                <button class="color-grid-item" style="background-color: #1e40af;" title="Azul Oscuro"></button>
+                                <button class="color-grid-item" style="background-color: #1e3a8a;" title="Azul Muy Oscuro"></button>
+                                <button class="color-grid-item" style="background-color: #a78bfa;" title="Violeta Claro"></button>
+                                <button class="color-grid-item" style="background-color: #8b5cf6;" title="Violeta"></button>
+                                <button class="color-grid-item" style="background-color: #7c3aed;" title="Violeta Oscuro"></button>
+                                <button class="color-grid-item" style="background-color: #c084fc;" title="Púrpura Claro"></button>
+                                <button class="color-grid-item" style="background-color: #a855f7;" title="Púrpura"></button>
+                                <button class="color-grid-item" style="background-color: #9333ea;" title="Púrpura Oscuro"></button>
+                                <button class="color-grid-item" style="background-color: #6366f1;" title="Índigo"></button>
+
+                                <!-- Neutrals -->
+                                <button class="color-grid-item" style="background-color: #cbd5e1;" title="Gris Claro"></button>
+                                <button class="color-grid-item" style="background-color: #94a3b8;" title="Gris"></button>
+                                <button class="color-grid-item" style="background-color: #64748b;" title="Gris Oscuro"></button>
+                                <button class="color-grid-item" style="background-color: #475569;" title="Gris Muy Oscuro"></button>
+                                <button class="color-grid-item" style="background-color: #a3a3a3;" title="Neutro"></button>
+                                <button class="color-grid-item" style="background-color: #71717a;" title="Zinc"></button>
+                                <button class="color-grid-item" style="background-color: #78716c;" title="Piedra"></button>
+                                <button class="color-grid-item" style="background-color: #57534e;" title="Piedra Oscura"></button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Botones de Acción -->
+                    <div class="flex gap-3">
+                        <button class="flex-1 px-6 py-3 bg-violet-600 hover:bg-violet-700 text-white font-semibold rounded-xl transition-all transform hover:scale-105">
+                            + Crear Categoría
+                        </button>
+                        <button class="flex-1 px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white font-semibold rounded-xl transition-all">
+                            Cancelar
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Panel Derecho: Preview -->
+            <div>
+                <div class="preview-card h-96 sticky top-8">
+                    <div class="text-center">
+                        <p class="text-slate-400 text-sm mb-3">Vista Previa</p>
+                        <div class="icon-preview">
+                            🍕
+                        </div>
+                        <p class="text-2xl font-bold text-white mb-1">Comida</p>
+                        <div class="inline-block px-3 py-1 bg-orange-500/20 text-orange-400 rounded-full text-xs font-medium">
+                            Orange
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Burger">🍔</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Taco">🌮</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Sushi">🍣</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Café">☕</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Bebida">🥤</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Cerveza">🍺</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Vino">🍷</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Fruta">🍎</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Verdura">🥕</button>
+
+                                    <!-- Transporte -->
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Auto">🚗</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Taxi">🚕</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Bus">🚌</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Tren">🚂</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Avión">✈️</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Bici">🚴</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Nafta">⛽</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Parking">🅿️</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Uber">🚗</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Viaje">🧳</button>
+
+                                    <!-- Entretenimiento -->
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Gaming">🎮</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Película">🎬</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Música">🎵</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Concierto">🎤</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Deporte">⚽</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Gym">🏋️</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Yoga">🧘</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Lectura">📚</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Arte">🎨</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Teatro">🎭</button>
+
+                                    <!-- Casa/Hogar -->
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Casa">🏠</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Muebles">🛋️</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Herramientas">🔧</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Limpieza">🧹</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Electricidad">⚡</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Plomería">🚿</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Luz">💡</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Calefacción">🔥</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Mascota">🐕</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Plantas">🌱</button>
+
+                                    <!-- Compras -->
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Shopping">🛍️</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Ropa">👕</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Zapatos">👞</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Belleza">💄</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Perfume">💐</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Accesorios">💍</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Reloj">⌚</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Electrónica">📱</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Libros">📖</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Juguete">🧩</button>
+
+                                    <!-- Salud -->
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Médico">⚕️</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Farmacia">💊</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Dentista">🦷</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Hospital">🏥</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Salud Mental">🧠</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Vitaminas">💪</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Emergencia">🚨</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Salud">❤️</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Médico">👨‍⚕️</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Cirugía">🔪</button>
+
+                                    <!-- Finanzas -->
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Dinero">💰</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Banco">🏦</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Inversión">📈</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Impuesto">📋</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Crédito">💳</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Moneda">💵</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Billetera">👛</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Préstamo">🤝</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Ahorro">🏦</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Pago">💸</button>
+
+                                    <!-- Otros -->
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Regalos">🎁</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Cumpleaños">🎉</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Reunión">👥</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Viajes">✈️</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Vacaciones">🏖️</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Trabajo">💼</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Educación">🎓</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Suscripción">📺</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Otros">❓</button>
+                                    <button class="w-10 h-10 bg-slate-800 border border-slate-600 rounded-lg flex items-center justify-center text-lg hover:border-violet-400 transition" title="Especial">⭐</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Color Selector -->
+                        <div>
+                            <label class="block text-sm font-medium text-slate-300 mb-2">
+                                Color
+                            </label>
+                            <div class="grid grid-cols-8 sm:grid-cols-10 md:grid-cols-12 gap-2 bg-slate-900 rounded-lg p-3 border border-slate-600">
+                                <!-- Rojos -->
+                                <button class="w-10 h-10 bg-red-400 rounded-lg border-2 border-white hover:opacity-80 transition" title="Rojo Claro"></button>
+                                <button class="w-10 h-10 bg-red-500 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Rojo"></button>
+                                <button class="w-10 h-10 bg-red-600 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Rojo Oscuro"></button>
+                                <button class="w-10 h-10 bg-rose-400 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Rosa Claro"></button>
+                                <button class="w-10 h-10 bg-rose-500 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Rosa"></button>
+                                <button class="w-10 h-10 bg-rose-600 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Rosa Oscuro"></button>
+                                <button class="w-10 h-10 bg-pink-400 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Pink Claro"></button>
+                                <button class="w-10 h-10 bg-pink-500 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Pink"></button>
+                                <button class="w-10 h-10 bg-pink-600 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Pink Oscuro"></button>
+                                <button class="w-10 h-10 bg-fuchsia-500 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Fucsia"></button>
+
+                                <!-- Naranjas -->
+                                <button class="w-10 h-10 bg-orange-300 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Naranja Claro"></button>
+                                <button class="w-10 h-10 bg-orange-400 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Naranja"></button>
+                                <button class="w-10 h-10 bg-orange-500 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Naranja"></button>
+                                <button class="w-10 h-10 bg-orange-600 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Naranja Oscuro"></button>
+                                <button class="w-10 h-10 bg-amber-300 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Ámbar Claro"></button>
+                                <button class="w-10 h-10 bg-amber-400 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Ámbar"></button>
+                                <button class="w-10 h-10 bg-amber-500 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Ámbar Oscuro"></button>
+                                <button class="w-10 h-10 bg-yellow-300 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Amarillo"></button>
+                                <button class="w-10 h-10 bg-yellow-400 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Amarillo Brillante"></button>
+                                <button class="w-10 h-10 bg-yellow-500 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Amarillo Oscuro"></button>
+
+                                <!-- Verdes -->
+                                <button class="w-10 h-10 bg-lime-300 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Lima"></button>
+                                <button class="w-10 h-10 bg-lime-400 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Lima Claro"></button>
+                                <button class="w-10 h-10 bg-lime-500 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Lima Oscuro"></button>
+                                <button class="w-10 h-10 bg-green-400 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Verde Claro"></button>
+                                <button class="w-10 h-10 bg-green-500 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Verde"></button>
+                                <button class="w-10 h-10 bg-green-600 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Verde Oscuro"></button>
+                                <button class="w-10 h-10 bg-emerald-400 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Esmeralda Claro"></button>
+                                <button class="w-10 h-10 bg-emerald-500 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Esmeralda"></button>
+                                <button class="w-10 h-10 bg-emerald-600 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Esmeralda Oscuro"></button>
+                                <button class="w-10 h-10 bg-teal-500 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Turquesa"></button>
+
+                                <!-- Cian/Azul Claro -->
+                                <button class="w-10 h-10 bg-cyan-300 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Cyan Claro"></button>
+                                <button class="w-10 h-10 bg-cyan-400 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Cyan"></button>
+                                <button class="w-10 h-10 bg-cyan-500 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Cyan Oscuro"></button>
+                                <button class="w-10 h-10 bg-sky-400 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Cielo Claro"></button>
+                                <button class="w-10 h-10 bg-sky-500 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Cielo"></button>
+                                <button class="w-10 h-10 bg-sky-600 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Cielo Oscuro"></button>
+                                <button class="w-10 h-10 bg-blue-400 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Azul Claro"></button>
+                                <button class="w-10 h-10 bg-blue-500 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Azul"></button>
+                                <button class="w-10 h-10 bg-blue-600 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Azul Oscuro"></button>
+                                <button class="w-10 h-10 bg-blue-700 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Azul Muy Oscuro"></button>
+
+                                <!-- Púrpura/Violeta -->
+                                <button class="w-10 h-10 bg-violet-400 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Violeta Claro"></button>
+                                <button class="w-10 h-10 bg-violet-500 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Violeta"></button>
+                                <button class="w-10 h-10 bg-violet-600 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Violeta Oscuro"></button>
+                                <button class="w-10 h-10 bg-purple-400 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Púrpura Claro"></button>
+                                <button class="w-10 h-10 bg-purple-500 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Púrpura"></button>
+                                <button class="w-10 h-10 bg-purple-600 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Púrpura Oscuro"></button>
+                                <button class="w-10 h-10 bg-indigo-400 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Índigo Claro"></button>
+                                <button class="w-10 h-10 bg-indigo-500 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Índigo"></button>
+                                <button class="w-10 h-10 bg-indigo-600 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Índigo Oscuro"></button>
+                                <button class="w-10 h-10 bg-indigo-700 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Índigo Muy Oscuro"></button>
+
+                                <!-- Grises/Neutros -->
+                                <button class="w-10 h-10 bg-slate-300 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Gris Claro"></button>
+                                <button class="w-10 h-10 bg-slate-400 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Gris"></button>
+                                <button class="w-10 h-10 bg-slate-500 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Gris Oscuro"></button>
+                                <button class="w-10 h-10 bg-gray-400 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Gris Neutro"></button>
+                                <button class="w-10 h-10 bg-stone-400 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Piedra"></button>
+                                <button class="w-10 h-10 bg-stone-500 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Piedra Oscura"></button>
+                                <button class="w-10 h-10 bg-neutral-400 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Neutro"></button>
+                                <button class="w-10 h-10 bg-neutral-500 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Neutro Oscuro"></button>
+                                <button class="w-10 h-10 bg-zinc-400 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Zinc"></button>
+                                <button class="w-10 h-10 bg-zinc-500 rounded-lg border border-slate-600 hover:opacity-80 transition" title="Zinc Oscuro"></button>
+                            </div>
+                        </div>
+
+                        <!-- Categoría Padre (opcional) -->
+                        <div>
+                            <label class="block text-sm font-medium text-slate-300 mb-2">
+                                ¿Es una subcategoría de...?
+                            </label>
+                            <select class="w-full px-4 py-2.5 bg-slate-900 border border-slate-600 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500">
+                                <option value="">No, es categoría principal</option>
+                                <option value="1">Comidas</option>
+                                <option value="2">Transporte</option>
+                                <option value="3">Entretenimiento</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Modal Footer -->
+                    <div class="sticky bottom-0 bg-slate-800 border-t border-slate-700 p-6 flex gap-3 justify-end">
+                        <button class="px-6 py-2.5 border border-slate-600 text-slate-300 hover:bg-slate-700 font-semibold rounded-lg transition">
+                            Cancelar
+                        </button>
+                        <button class="px-6 py-2.5 bg-violet-600 hover:bg-violet-700 text-white font-semibold rounded-lg transition">
+                            Crear Categoría
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,178 @@
+'use client';
+
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/auth-context';
+import { supabase } from '@/lib/supabase';
+import { Category, Expense, ExpenseInstallmentPlan } from '@/lib/types';
+import { useCurrencyDisplay } from '@/lib/currency-display-context';
+import { pickAmount, formatMoney } from '@/lib/format-money';
+import { AppMenu } from '@/components/layout/AppMenu';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
+
+interface PlanProgress {
+  plan: ExpenseInstallmentPlan;
+  doneCount: number;
+  remainingCount: number;
+  remainingAmountArs: number;
+  remainingAmountUsd: number;
+  nextDate: string | null;
+  nextAmountArs: number | null;
+  nextAmountUsd: number | null;
+}
+
+export default function PendingInstallmentsPage() {
+  const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
+  const { showUsd } = useCurrencyDisplay();
+
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [plans, setPlans] = useState<ExpenseInstallmentPlan[]>([]);
+  const [installmentExpenses, setInstallmentExpenses] = useState<Expense[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!authLoading && !user) router.push('/login');
+  }, [user, authLoading, router]);
+
+  const fetchData = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    const [{ data: cats }, { data: plansData }, { data: exps }] = await Promise.all([
+      supabase.from('categories').select('*').eq('user_id', user.id),
+      supabase.from('expense_installment_plans').select('*').eq('user_id', user.id),
+      supabase.from('expenses').select('*').eq('user_id', user.id).not('installment_plan_id', 'is', null),
+    ]);
+    setCategories(cats ?? []);
+    setPlans(plansData ?? []);
+    setInstallmentExpenses(exps ?? []);
+    setLoading(false);
+  }, [user]);
+
+  useEffect(() => {
+    if (user) fetchData();
+  }, [user, fetchData]);
+
+  const activePlans = useMemo(() => {
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const result: PlanProgress[] = [];
+
+    for (const plan of plans) {
+      const rows = installmentExpenses
+        .filter((e) => e.installment_plan_id === plan.id)
+        .sort((a, b) => (a.installment_number ?? 0) - (b.installment_number ?? 0));
+
+      const done = rows.filter((r) => r.date <= today);
+      const remaining = rows.filter((r) => r.date > today);
+
+      if (remaining.length === 0) continue;
+
+      result.push({
+        plan,
+        doneCount: done.length,
+        remainingCount: remaining.length,
+        remainingAmountArs: remaining.reduce((sum, r) => sum + r.amount_ars, 0),
+        remainingAmountUsd: remaining.reduce((sum, r) => sum + r.amount_usd, 0),
+        nextDate: remaining[0]?.date ?? null,
+        nextAmountArs: remaining[0]?.amount_ars ?? null,
+        nextAmountUsd: remaining[0]?.amount_usd ?? null,
+      });
+    }
+
+    return result.sort((a, b) => (a.nextDate ?? '').localeCompare(b.nextDate ?? ''));
+  }, [plans, installmentExpenses]);
+
+  if (authLoading || loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950">
+        <div className="animate-spin h-8 w-8 border-2 border-violet-600 border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
+  if (!user) return null;
+
+  return (
+    <div className="min-h-screen bg-slate-950 pb-16">
+      <PageHeader
+        title="Cuotas pendientes"
+        onBack={() => router.push('/dashboard')}
+        onMenu={() => setMenuOpen(true)}
+      />
+      <div className="px-4 pb-4">
+        <p className="text-slate-500 text-sm text-center">
+          {activePlans.length} {activePlans.length === 1 ? 'plan activo' : 'planes activos'}
+        </p>
+      </div>
+
+      <div className="px-4 flex flex-col gap-3">
+        {activePlans.length === 0 && (
+          <p className="text-center text-slate-500 text-sm py-16">
+            No tenés gastos en cuotas corriendo actualmente.
+          </p>
+        )}
+        {activePlans.map((planProgress) => {
+          const {
+            plan,
+            doneCount,
+            remainingCount,
+            remainingAmountArs,
+            remainingAmountUsd,
+            nextDate,
+            nextAmountArs,
+            nextAmountUsd,
+          } = planProgress;
+          const cat = categories.find((c) => c.id === plan.category_id);
+          const remainingAmount = pickAmount(remainingAmountArs, remainingAmountUsd, showUsd);
+          const nextAmount =
+            nextAmountArs !== null && nextAmountUsd !== null
+              ? pickAmount(nextAmountArs, nextAmountUsd, showUsd)
+              : null;
+          return (
+            <div key={plan.id} className="bg-slate-800/60 rounded-xl px-4 py-3 flex flex-col gap-2">
+              <div className="flex items-center gap-3">
+                {cat && (
+                  <div
+                    className="w-9 h-9 rounded-full flex items-center justify-center text-lg flex-shrink-0"
+                    style={{ backgroundColor: cat.color }}
+                  >
+                    {cat.icon}
+                  </div>
+                )}
+                <div className="flex-1">
+                  <p className="text-white text-sm font-medium">{plan.description}</p>
+                  <p className="text-slate-500 text-xs mt-0.5">
+                    Cuota {doneCount} de {plan.num_installments}
+                    {cat ? ` · ${cat.name}` : ''}
+                  </p>
+                </div>
+                {nextAmount !== null && (
+                  <p className="text-white text-sm font-semibold whitespace-nowrap">
+                    {formatMoney(nextAmount, showUsd)}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between bg-slate-900/50 rounded-lg px-3 py-2">
+                <p className="text-xs text-slate-400">
+                  Restan {remainingCount} {remainingCount === 1 ? 'cuota' : 'cuotas'} ·{' '}
+                  {formatMoney(remainingAmount, showUsd)} en total
+                </p>
+                {nextDate && (
+                  <p className="text-xs text-slate-500">
+                    Próxima: {format(new Date(`${nextDate}T00:00:00`), 'd MMM', { locale: es })}
+                  </p>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <AppMenu open={menuOpen} onClose={() => setMenuOpen(false)} />
+    </div>
+  );
+}
