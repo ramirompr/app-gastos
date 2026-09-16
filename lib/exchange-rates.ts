@@ -100,6 +100,12 @@ async function fetchHistoricalRate(date: Date, attemptsLeft = 7): Promise<number
   return fetchHistoricalRate(subDays(date, 1), attemptsLeft - 1);
 }
 
+/** Convierte un monto de una moneda a otra usando una cotización ya resuelta. */
+export function convertWithRate(amount: number, from: 'ARS' | 'USD', to: 'ARS' | 'USD', rate: number): number {
+  if (from === to) return amount;
+  return from === 'USD' ? amount * rate : amount / rate;
+}
+
 /**
  * Convierte un monto de una moneda a otra usando la cotización de una fecha dada.
  */

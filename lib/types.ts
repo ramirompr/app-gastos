@@ -104,6 +104,7 @@ export type Database = {
           default_amount: number;
           currency: 'ARS' | 'USD';
           day_of_month: number;
+          frequency_months: number;
           active: boolean;
           created_at: string;
         };
@@ -115,6 +116,7 @@ export type Database = {
           default_amount: number;
           currency: 'ARS' | 'USD';
           day_of_month: number;
+          frequency_months?: number;
           active?: boolean;
           created_at?: string;
         };
@@ -126,6 +128,7 @@ export type Database = {
           default_amount?: number;
           currency?: 'ARS' | 'USD';
           day_of_month?: number;
+          frequency_months?: number;
           active?: boolean;
           created_at?: string;
         };

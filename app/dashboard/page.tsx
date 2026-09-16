@@ -4,12 +4,15 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
-import { Category, Expense } from '@/lib/types';
+import { Category, Expense, RecurringExpense } from '@/lib/types';
 import { getTopLevelCategory, fetchUserCategories } from '@/lib/categories';
 import { Emoji } from '@/components/ui/Emoji';
 import { useCurrencyDisplay } from '@/lib/currency-display-context';
 import { pickAmount, formatMoney } from '@/lib/format-money';
 import { resolvePendingExchangeRates } from '@/lib/expenses';
+import { getExchangeRate, convertWithRate } from '@/lib/exchange-rates';
+import { isRecurringDueInMonth } from '@/lib/recurring';
+import { ConfirmPaymentSheet } from '@/components/recurring/ConfirmPaymentSheet';
 import { DonutChart } from '@/components/dashboard/DonutChart';
 import { AppMenu } from '@/components/layout/AppMenu';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -20,7 +23,12 @@ import {
   shiftAnchor,
   canGoNext,
 } from '@/lib/date-periods';
-import { format } from 'date-fns';
+import { format, startOfMonth, endOfMonth } from 'date-fns';
+
+interface RecurringStatus {
+  recurring: RecurringExpense;
+  isOverdue: boolean;
+}
 
 const PERIOD_TABS: { value: Period; label: string }[] = [
   { value: 'week', label: 'Semana' },
@@ -43,6 +51,11 @@ export default function DashboardPage() {
   const [customStart, setCustomStart] = useState(format(new Date(), 'yyyy-MM-01'));
   const [customEnd, setCustomEnd] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const [recurringStatuses, setRecurringStatuses] = useState<RecurringStatus[]>([]);
+  const [recurringRate, setRecurringRate] = useState<number | null>(null);
+  const [loadingRecurring, setLoadingRecurring] = useState(true);
+  const [payingRecurring, setPayingRecurring] = useState<RecurringExpense | null>(null);
 
   const pointerStartX = useRef<number | null>(null);
 
@@ -86,6 +99,46 @@ export default function DashboardPage() {
     // Solo una vez por apertura del dashboard, no hace falta repetirlo por cada refetch de rango.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  const fetchRecurring = useCallback(async () => {
+    if (!user) return;
+    setLoadingRecurring(true);
+    const monthStart = format(startOfMonth(new Date()), 'yyyy-MM-dd');
+    const monthEnd = format(endOfMonth(new Date()), 'yyyy-MM-dd');
+
+    const [{ data: recs }, { data: confirmed }, rate] = await Promise.all([
+      supabase.from('recurring_expenses').select('*').eq('user_id', user.id).eq('active', true),
+      supabase
+        .from('expenses')
+        .select('recurring_expense_id')
+        .eq('user_id', user.id)
+        .not('recurring_expense_id', 'is', null)
+        .gte('date', monthStart)
+        .lte('date', monthEnd),
+      getExchangeRate(new Date()).catch(() => null),
+    ]);
+
+    const confirmedIds = new Set((confirmed ?? []).map((e) => e.recurring_expense_id));
+    const currentDay = new Date().getDate();
+    const statuses = (recs ?? [])
+      .filter((r) => isRecurringDueInMonth(r) && !confirmedIds.has(r.id))
+      .map((r) => ({ recurring: r, isOverdue: r.day_of_month <= currentDay }))
+      .sort((a, b) =>
+        a.isOverdue === b.isOverdue
+          ? a.recurring.day_of_month - b.recurring.day_of_month
+          : a.isOverdue
+          ? -1
+          : 1
+      );
+
+    setRecurringStatuses(statuses);
+    setRecurringRate(rate);
+    setLoadingRecurring(false);
+  }, [user]);
+
+  useEffect(() => {
+    if (user) fetchRecurring();
+  }, [user, fetchRecurring]);
 
   const pendingCount = useMemo(
     () => expenses.filter((e) => e.exchange_rate_used == null).length,
@@ -277,6 +330,79 @@ export default function DashboardPage() {
           </div>
         ))}
       </div>
+
+      {/* Gastos recurrentes de este mes, sin confirmar todavía */}
+      {!loadingRecurring && recurringStatuses.length > 0 && (
+        <div className="px-4 flex flex-col gap-3 mt-6">
+          <p className="text-slate-500 text-xs uppercase tracking-wider font-semibold px-1">
+            Recurrentes de este mes
+          </p>
+          {recurringStatuses.map(({ recurring, isOverdue }) => {
+            const cat = categories.find((c) => c.id === recurring.category_id);
+            const topCat = getTopLevelCategory(categories, recurring.category_id);
+            const displayCurrency = showUsd ? 'USD' : 'ARS';
+            const needsConversion = recurring.currency !== displayCurrency;
+            const amount =
+              !needsConversion || recurringRate !== null
+                ? convertWithRate(recurring.default_amount, recurring.currency, displayCurrency, recurringRate ?? 1)
+                : null;
+            return (
+              <div
+                key={recurring.id}
+                onClick={() => router.push('/dashboard/recurring')}
+                className={`flex items-center gap-3 rounded-xl px-4 py-3 cursor-pointer active:scale-[0.98] transition-all border ${
+                  isOverdue
+                    ? 'bg-red-500/10 border-red-500/30 hover:bg-red-500/15'
+                    : 'bg-amber-400/10 border-amber-400/30 hover:bg-amber-400/15'
+                }`}
+              >
+                {topCat && (
+                  <div
+                    className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+                    style={{ backgroundColor: topCat.color }}
+                  >
+                    <Emoji emoji={topCat.icon} size={16} />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-white text-sm font-medium truncate">{recurring.description}</p>
+                  <p className="text-slate-500 text-xs mt-0.5 truncate">
+                    {cat && (cat.parent_id ? `${topCat?.name} › ${cat.name}` : cat.name)}
+                  </p>
+                  <p className={`text-xs mt-0.5 font-medium ${isOverdue ? 'text-red-400' : 'text-amber-400'}`}>
+                    {isOverdue ? 'Vencido' : 'Pendiente'} · día {recurring.day_of_month}
+                  </p>
+                </div>
+                <div className="flex flex-col items-end gap-1">
+                  <p className="text-white text-sm font-semibold whitespace-nowrap">
+                    {amount !== null ? formatMoney(amount, showUsd) : 'Cotización pendiente'}
+                  </p>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPayingRecurring(recurring);
+                    }}
+                    className="text-xs font-semibold text-violet-400 hover:text-violet-300 whitespace-nowrap"
+                  >
+                    Pagar
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {payingRecurring && (
+        <ConfirmPaymentSheet
+          recurring={payingRecurring}
+          onClose={() => setPayingRecurring(null)}
+          onPaid={() => {
+            setPayingRecurring(null);
+            fetchRecurring();
+          }}
+        />
+      )}
 
       <AppMenu open={menuOpen} onClose={() => setMenuOpen(false)} />
     </div>

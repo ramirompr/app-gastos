@@ -5,29 +5,26 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { Category, Expense, RecurringExpense } from '@/lib/types';
-import { fetchUserCategories } from '@/lib/categories';
+import { fetchUserCategories, getTopLevelCategory } from '@/lib/categories';
 import { Emoji } from '@/components/ui/Emoji';
 import { MoreVertical, Pencil, Trash2 } from 'lucide-react';
-import { tryCalculateAmountsInBothCurrencies, getExchangeRate } from '@/lib/exchange-rates';
+import { getExchangeRate, convertWithRate } from '@/lib/exchange-rates';
+import { isRecurringDueInMonth, monthsUntilNextDue, frequencyLabel } from '@/lib/recurring';
 import { useCurrencyDisplay } from '@/lib/currency-display-context';
 import { formatMoney } from '@/lib/format-money';
 import { RecurringExpenseFormModal } from '@/components/recurring/RecurringExpenseFormModal';
+import { ConfirmPaymentSheet } from '@/components/recurring/ConfirmPaymentSheet';
 import { AppMenu } from '@/components/layout/AppMenu';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PlusIcon } from '@/components/icons/PlusIcon';
 import { BottomSheet } from '@/components/ui/BottomSheet';
-import { MoneyInput } from '@/components/ui/MoneyInput';
-import { format, startOfMonth, endOfMonth } from 'date-fns';
+import { format, startOfMonth, endOfMonth, addMonths } from 'date-fns';
+import { es } from 'date-fns/locale';
+import { capitalize } from '@/lib/date-periods';
 
 type ActionSheet =
   | { type: 'menu'; recurring: RecurringExpense }
   | { type: 'deleteConfirm'; recurring: RecurringExpense };
-
-/** Convierte un monto de una moneda a otra usando una cotización ya resuelta. */
-function convertWithRate(amount: number, from: 'ARS' | 'USD', to: 'ARS' | 'USD', rate: number): number {
-  if (from === to) return amount;
-  return from === 'USD' ? amount * rate : amount / rate;
-}
 
 export default function RecurringExpensesPage() {
   const router = useRouter();
@@ -46,10 +43,7 @@ export default function RecurringExpensesPage() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
 
-  const [confirmingRecurring, setConfirmingRecurring] = useState<RecurringExpense | null>(null);
-  const [confirmAmount, setConfirmAmount] = useState('');
-  const [confirmSaving, setConfirmSaving] = useState(false);
-  const [confirmError, setConfirmError] = useState('');
+  const [payingRecurring, setPayingRecurring] = useState<RecurringExpense | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) router.push('/login');
@@ -89,69 +83,28 @@ export default function RecurringExpensesPage() {
     if (user) fetchData();
   }, [user, fetchData]);
 
-  const today = new Date();
-  const currentDay = today.getDate();
-
   const statuses = useMemo(() => {
-    return recurrings.map((r) => {
-      const confirmedExpense = confirmedThisMonth.find((e) => e.recurring_expense_id === r.id) ?? null;
-      const isDue = !confirmedExpense && r.day_of_month <= currentDay;
-      return { recurring: r, confirmedExpense, isDue };
+    const now = new Date();
+    const currentDay = now.getDate();
+    const withStatus = recurrings.map((r) => {
+      const dueThisMonth = isRecurringDueInMonth(r, now);
+      const confirmedExpense = dueThisMonth
+        ? confirmedThisMonth.find((e) => e.recurring_expense_id === r.id) ?? null
+        : null;
+      const isPaid = !!confirmedExpense;
+      const isOverdue = dueThisMonth && !isPaid && r.day_of_month <= currentDay;
+      return { recurring: r, confirmedExpense, isPaid, isOverdue, dueThisMonth };
     });
-  }, [recurrings, confirmedThisMonth, currentDay]);
-
-  const openConfirm = (recurring: RecurringExpense) => {
-    setConfirmingRecurring(recurring);
-    setConfirmAmount(String(recurring.default_amount));
-    setConfirmError('');
-  };
-
-  const handleConfirm = async () => {
-    if (!confirmingRecurring || !user) return;
-    setConfirmError('');
-    const parsedAmount = parseFloat(confirmAmount) || 0;
-    if (parsedAmount <= 0) {
-      setConfirmError('Ingresá un monto válido');
-      return;
-    }
-
-    setConfirmSaving(true);
-    try {
-      const date = new Date(today.getFullYear(), today.getMonth(), confirmingRecurring.day_of_month);
-      const { amount_ars, amount_usd, exchange_rate_used } = await tryCalculateAmountsInBothCurrencies(
-        parsedAmount,
-        confirmingRecurring.currency,
-        date
-      );
-
-      const { data: created, error } = await supabase
-        .from('expenses')
-        .insert({
-          user_id: user.id,
-          category_id: confirmingRecurring.category_id,
-          description: confirmingRecurring.description,
-          amount: parsedAmount,
-          currency: confirmingRecurring.currency,
-          amount_ars,
-          amount_usd,
-          exchange_rate_used,
-          date: format(date, 'yyyy-MM-dd'),
-          split_type: 'personal',
-          recurring_expense_id: confirmingRecurring.id,
-        })
-        .select()
-        .single();
-      if (error) throw error;
-
-      setConfirmedThisMonth((prev) => [...prev, created]);
-      setConfirmingRecurring(null);
-    } catch (err) {
-      console.error(err);
-      setConfirmError('Error al confirmar. Intentá de nuevo.');
-    } finally {
-      setConfirmSaving(false);
-    }
-  };
+    // Semáforo: vencidos primero, después pendientes, pagados, y al final los
+    // que este mes no corresponden por su frecuencia; cada grupo ordenado
+    // por día de cobro.
+    const statusRank = (s: (typeof withStatus)[number]) =>
+      !s.dueThisMonth ? 3 : s.isOverdue ? 0 : s.isPaid ? 2 : 1;
+    return withStatus.sort((a, b) => {
+      const rankDiff = statusRank(a) - statusRank(b);
+      return rankDiff !== 0 ? rankDiff : a.recurring.day_of_month - b.recurring.day_of_month;
+    });
+  }, [recurrings, confirmedThisMonth]);
 
   const handleSaved = (saved: RecurringExpense) => {
     setRecurrings((prev) => {
@@ -203,52 +156,68 @@ export default function RecurringExpensesPage() {
             No tenés gastos recurrentes cargados. Tocá el + para agregar uno.
           </p>
         )}
-        {statuses.map(({ recurring, confirmedExpense, isDue }) => {
+        {statuses.map(({ recurring, confirmedExpense, isPaid, isOverdue, dueThisMonth }) => {
           const cat = categories.find((c) => c.id === recurring.category_id);
+          const topCat = getTopLevelCategory(categories, recurring.category_id);
           const displayCurrency = showUsd ? 'USD' : 'ARS';
           const needsConversion = recurring.currency !== displayCurrency;
           const templateAmount =
             !needsConversion || todayRate !== null
               ? convertWithRate(recurring.default_amount, recurring.currency, displayCurrency, todayRate ?? 1)
               : null;
+          const statusColor = !dueThisMonth ? 'slate' : isPaid ? 'emerald' : isOverdue ? 'red' : 'amber';
+          const cardClass = {
+            slate: 'bg-slate-800/40 border-slate-700/50',
+            emerald: 'bg-emerald-500/10 border-emerald-500/30',
+            red: 'bg-red-500/10 border-red-500/30',
+            amber: 'bg-amber-400/10 border-amber-400/30',
+          }[statusColor];
+          const textClass = {
+            slate: 'text-slate-500',
+            emerald: 'text-emerald-400',
+            red: 'text-red-400',
+            amber: 'text-amber-400',
+          }[statusColor];
           return (
-            <div
-              key={recurring.id}
-              className="bg-slate-800/60 rounded-xl px-4 py-3 flex items-center gap-3"
-            >
-              {cat && (
+            <div key={recurring.id} className={`rounded-xl px-4 py-3 flex items-center gap-3 border ${cardClass}`}>
+              {topCat && (
                 <div
                   className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
-                  style={{ backgroundColor: cat.color }}
+                  style={{ backgroundColor: topCat.color }}
                 >
-                  <Emoji emoji={cat.icon} size={18} />
+                  <Emoji emoji={topCat.icon} size={18} />
                 </div>
               )}
               <div className="flex-1 min-w-0">
                 <p className="text-white text-sm font-medium truncate">{recurring.description}</p>
-                <p className="text-slate-500 text-xs mt-0.5">
-                  Día {recurring.day_of_month} ·{' '}
+                <p className="text-slate-500 text-xs mt-0.5 truncate">
+                  {cat && (cat.parent_id ? `${topCat?.name} › ${cat.name}` : cat.name)} · Día{' '}
+                  {recurring.day_of_month}
+                  {recurring.frequency_months !== 1 && ` · ${frequencyLabel(recurring.frequency_months)}`} ·{' '}
                   {templateAmount !== null ? formatMoney(templateAmount, showUsd) : 'Cotización pendiente'}
+                </p>
+                <p className={`text-xs mt-0.5 font-medium ${textClass}`}>
+                  {!dueThisMonth
+                    ? `No corresponde este mes · próximo cobro en ${capitalize(
+                        format(addMonths(new Date(), monthsUntilNextDue(recurring)), 'MMMM', { locale: es })
+                      )}`
+                    : isPaid
+                    ? confirmedExpense?.exchange_rate_used == null
+                      ? 'Pagado (cotización pendiente)'
+                      : 'Pagado'
+                    : isOverdue
+                    ? 'Vencido'
+                    : 'Pendiente'}
                 </p>
               </div>
 
-              {confirmedExpense ? (
-                <span className="text-xs font-medium text-emerald-400 whitespace-nowrap">
-                  ✓ {confirmedExpense.exchange_rate_used == null
-                    ? 'Cargado (cotización pendiente)'
-                    : 'Cargado'}
-                </span>
-              ) : isDue ? (
+              {dueThisMonth && !isPaid && (
                 <button
-                  onClick={() => openConfirm(recurring)}
+                  onClick={() => setPayingRecurring(recurring)}
                   className="text-xs font-semibold text-violet-400 hover:text-violet-300 whitespace-nowrap"
                 >
-                  Confirmar
+                  Pagar
                 </button>
-              ) : (
-                <span className="text-xs text-slate-500 whitespace-nowrap">
-                  Próx. día {recurring.day_of_month}
-                </span>
               )}
 
               <button
@@ -288,43 +257,16 @@ export default function RecurringExpensesPage() {
         />
       )}
 
-      {/* Confirm sheet */}
-      {confirmingRecurring && (
-        <BottomSheet onClose={() => setConfirmingRecurring(null)}>
-          <div className="flex flex-col gap-4">
-            <p className="text-white font-semibold text-lg">
-              Confirmar &quot;{confirmingRecurring.description}&quot;
-            </p>
-            <p className="text-slate-400 text-sm -mt-2">
-              ¿Confirmás que el monto de este mes es este? Podés editarlo antes de confirmar.
-            </p>
-            <div className="flex items-center gap-3">
-              <MoneyInput
-                value={confirmAmount}
-                onChange={setConfirmAmount}
-                className="flex-1 px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white focus:border-violet-500 focus:outline-none transition text-lg font-semibold"
-                autoFocus
-              />
-              <span className="text-emerald-400 font-semibold">{confirmingRecurring.currency}</span>
-            </div>
-            {confirmError && <p className="text-red-400 text-sm">{confirmError}</p>}
-            <div className="flex gap-3">
-              <button
-                onClick={() => setConfirmingRecurring(null)}
-                className="flex-1 py-4 bg-slate-800 hover:bg-slate-700 text-white font-semibold rounded-xl transition"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleConfirm}
-                disabled={confirmSaving}
-                className="flex-1 py-4 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-semibold rounded-xl transition"
-              >
-                {confirmSaving ? 'Guardando...' : 'Confirmar'}
-              </button>
-            </div>
-          </div>
-        </BottomSheet>
+      {/* Pay sheet */}
+      {payingRecurring && (
+        <ConfirmPaymentSheet
+          recurring={payingRecurring}
+          onClose={() => setPayingRecurring(null)}
+          onPaid={(created) => {
+            setConfirmedThisMonth((prev) => [...prev, created]);
+            setPayingRecurring(null);
+          }}
+        />
       )}
 
       {actionSheet?.type === 'menu' && (
