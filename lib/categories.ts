@@ -1,3 +1,4 @@
+import { supabase } from './supabase';
 import { Category } from './types';
 
 /**
@@ -9,4 +10,10 @@ export function getTopLevelCategory(categories: Category[], categoryId: string):
   if (!cat) return undefined;
   if (!cat.parent_id) return cat;
   return categories.find((c) => c.id === cat.parent_id) ?? cat;
+}
+
+/** Trae todas las categorías (y subcategorías) del usuario. */
+export async function fetchUserCategories(userId: string): Promise<Category[]> {
+  const { data } = await supabase.from('categories').select('*').eq('user_id', userId);
+  return data ?? [];
 }

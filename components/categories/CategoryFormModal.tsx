@@ -5,6 +5,8 @@ import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { Category } from '@/lib/types';
 import { EmojiPicker } from './EmojiPicker';
+import { BottomSheet } from '@/components/ui/BottomSheet';
+import { Emoji } from '@/components/ui/Emoji';
 
 const COLORS = [
   '#ef4444', '#f97316', '#f59e0b', '#eab308',
@@ -93,32 +95,29 @@ export function CategoryFormModal({
         />
       )}
 
-      <div className="fixed inset-0 z-40 bg-black/60" onClick={onClose} />
-
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-slate-900 rounded-t-2xl border-t border-slate-800">
-        <div className="flex justify-center pt-3 pb-1">
-          <div className="w-10 h-1 bg-slate-700 rounded-full" />
-        </div>
-
-        <div className="px-6 pt-4 pb-10">
+      <BottomSheet onClose={onClose}>
+        <div>
           <h2 className="text-white font-semibold text-lg mb-6">
             {isEdit ? 'Editar categoría' : 'Nueva categoría'}
           </h2>
 
+          {error && <p className="text-red-400 text-sm mb-2">{error}</p>}
           <div className="flex gap-3 mb-6">
             <button
               onClick={() => setShowEmojiPicker(true)}
-              className="w-14 h-14 flex items-center justify-center text-2xl rounded-xl flex-shrink-0 transition active:scale-90"
+              className="w-14 h-14 flex items-center justify-center rounded-xl flex-shrink-0 transition active:scale-90"
               style={{ backgroundColor: color }}
             >
-              {emoji}
+              <Emoji emoji={emoji} size={30} />
             </button>
             <input
               type="text"
               placeholder="Nombre..."
               value={name}
               onChange={(e) => { setName(e.target.value); setError(''); }}
-              className="flex-1 px-4 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:border-violet-500 focus:outline-none transition"
+              className={`flex-1 px-4 bg-slate-800 border rounded-xl text-white placeholder-slate-500 focus:outline-none transition ${
+                error ? 'border-red-500' : 'border-slate-700 focus:border-violet-500'
+              }`}
               autoFocus
             />
           </div>
@@ -161,8 +160,6 @@ export function CategoryFormModal({
             </div>
           )}
 
-          {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
-
           <button
             onClick={handleSubmit}
             disabled={loading}
@@ -171,7 +168,7 @@ export function CategoryFormModal({
             {loading ? 'Guardando...' : isEdit ? 'Guardar cambios' : 'Crear categoría'}
           </button>
         </div>
-      </div>
+      </BottomSheet>
     </>
   );
 }

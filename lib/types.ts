@@ -38,9 +38,9 @@ export type Database = {
           description: string;
           amount: number;
           currency: 'ARS' | 'USD';
-          amount_ars: number;
-          amount_usd: number;
-          exchange_rate_used: number;
+          amount_ars: number | null;
+          amount_usd: number | null;
+          exchange_rate_used: number | null;
           date: string;
           split_type: 'personal' | 'invited' | 'shared';
           partner_share: number | null;
@@ -59,9 +59,9 @@ export type Database = {
           description: string;
           amount: number;
           currency: 'ARS' | 'USD';
-          amount_ars: number;
-          amount_usd: number;
-          exchange_rate_used: number;
+          amount_ars: number | null;
+          amount_usd: number | null;
+          exchange_rate_used: number | null;
           date: string;
           split_type: 'personal' | 'invited' | 'shared';
           partner_share?: number | null;
@@ -80,9 +80,9 @@ export type Database = {
           description?: string;
           amount?: number;
           currency?: 'ARS' | 'USD';
-          amount_ars?: number;
-          amount_usd?: number;
-          exchange_rate_used?: number;
+          amount_ars?: number | null;
+          amount_usd?: number | null;
+          exchange_rate_used?: number | null;
           date?: string;
           split_type?: 'personal' | 'invited' | 'shared';
           partner_share?: number | null;

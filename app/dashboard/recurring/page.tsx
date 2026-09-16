@@ -5,37 +5,46 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { Category, Expense, RecurringExpense } from '@/lib/types';
-import { calculateAmountsInBothCurrencies } from '@/lib/exchange-rates';
+import { fetchUserCategories } from '@/lib/categories';
+import { Emoji } from '@/components/ui/Emoji';
+import { MoreVertical, Pencil, Trash2 } from 'lucide-react';
+import { tryCalculateAmountsInBothCurrencies, getExchangeRate } from '@/lib/exchange-rates';
+import { useCurrencyDisplay } from '@/lib/currency-display-context';
+import { formatMoney } from '@/lib/format-money';
 import { RecurringExpenseFormModal } from '@/components/recurring/RecurringExpenseFormModal';
 import { AppMenu } from '@/components/layout/AppMenu';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PlusIcon } from '@/components/icons/PlusIcon';
+import { BottomSheet } from '@/components/ui/BottomSheet';
+import { MoneyInput } from '@/components/ui/MoneyInput';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 
 type ActionSheet =
   | { type: 'menu'; recurring: RecurringExpense }
   | { type: 'deleteConfirm'; recurring: RecurringExpense };
 
-function formatByCurrency(amount: number, currency: 'ARS' | 'USD'): string {
-  if (currency === 'USD') {
-    return `US$ ${amount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  }
-  return `${Math.round(amount).toLocaleString('es-AR')} $`;
+/** Convierte un monto de una moneda a otra usando una cotización ya resuelta. */
+function convertWithRate(amount: number, from: 'ARS' | 'USD', to: 'ARS' | 'USD', rate: number): number {
+  if (from === to) return amount;
+  return from === 'USD' ? amount * rate : amount / rate;
 }
 
 export default function RecurringExpensesPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
+  const { showUsd } = useCurrencyDisplay();
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [recurrings, setRecurrings] = useState<RecurringExpense[]>([]);
   const [confirmedThisMonth, setConfirmedThisMonth] = useState<Expense[]>([]);
+  const [todayRate, setTodayRate] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [editingRecurring, setEditingRecurring] = useState<RecurringExpense | null>(null);
   const [actionSheet, setActionSheet] = useState<ActionSheet | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   const [confirmingRecurring, setConfirmingRecurring] = useState<RecurringExpense | null>(null);
   const [confirmAmount, setConfirmAmount] = useState('');
@@ -52,8 +61,8 @@ export default function RecurringExpensesPage() {
     const monthStart = format(startOfMonth(new Date()), 'yyyy-MM-dd');
     const monthEnd = format(endOfMonth(new Date()), 'yyyy-MM-dd');
 
-    const [{ data: cats }, { data: recs }, { data: confirmed }] = await Promise.all([
-      supabase.from('categories').select('*').eq('user_id', user.id),
+    const [cats, { data: recs }, { data: confirmed }, rate] = await Promise.all([
+      fetchUserCategories(user.id),
       supabase
         .from('recurring_expenses')
         .select('*')
@@ -67,10 +76,12 @@ export default function RecurringExpensesPage() {
         .not('recurring_expense_id', 'is', null)
         .gte('date', monthStart)
         .lte('date', monthEnd),
+      getExchangeRate(new Date()).catch(() => null),
     ]);
-    setCategories(cats ?? []);
+    setCategories(cats);
     setRecurrings(recs ?? []);
     setConfirmedThisMonth(confirmed ?? []);
+    setTodayRate(rate);
     setLoading(false);
   }, [user]);
 
@@ -107,7 +118,7 @@ export default function RecurringExpensesPage() {
     setConfirmSaving(true);
     try {
       const date = new Date(today.getFullYear(), today.getMonth(), confirmingRecurring.day_of_month);
-      const { amount_ars, amount_usd, exchange_rate_used } = await calculateAmountsInBothCurrencies(
+      const { amount_ars, amount_usd, exchange_rate_used } = await tryCalculateAmountsInBothCurrencies(
         parsedAmount,
         confirmingRecurring.currency,
         date
@@ -154,6 +165,7 @@ export default function RecurringExpensesPage() {
 
   const handleDelete = async (recurring: RecurringExpense) => {
     setDeleting(true);
+    setDeleteError('');
     try {
       const { error } = await supabase.from('recurring_expenses').delete().eq('id', recurring.id);
       if (error) throw error;
@@ -161,6 +173,7 @@ export default function RecurringExpensesPage() {
       setActionSheet(null);
     } catch (err) {
       console.error(err);
+      setDeleteError('No se pudo eliminar. Intentá de nuevo.');
     } finally {
       setDeleting(false);
     }
@@ -192,6 +205,12 @@ export default function RecurringExpensesPage() {
         )}
         {statuses.map(({ recurring, confirmedExpense, isDue }) => {
           const cat = categories.find((c) => c.id === recurring.category_id);
+          const displayCurrency = showUsd ? 'USD' : 'ARS';
+          const needsConversion = recurring.currency !== displayCurrency;
+          const templateAmount =
+            !needsConversion || todayRate !== null
+              ? convertWithRate(recurring.default_amount, recurring.currency, displayCurrency, todayRate ?? 1)
+              : null;
           return (
             <div
               key={recurring.id}
@@ -199,23 +218,25 @@ export default function RecurringExpensesPage() {
             >
               {cat && (
                 <div
-                  className="w-10 h-10 rounded-full flex items-center justify-center text-lg flex-shrink-0"
+                  className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
                   style={{ backgroundColor: cat.color }}
                 >
-                  {cat.icon}
+                  <Emoji emoji={cat.icon} size={18} />
                 </div>
               )}
               <div className="flex-1 min-w-0">
                 <p className="text-white text-sm font-medium truncate">{recurring.description}</p>
                 <p className="text-slate-500 text-xs mt-0.5">
                   Día {recurring.day_of_month} ·{' '}
-                  {formatByCurrency(recurring.default_amount, recurring.currency)}
+                  {templateAmount !== null ? formatMoney(templateAmount, showUsd) : 'Cotización pendiente'}
                 </p>
               </div>
 
               {confirmedExpense ? (
                 <span className="text-xs font-medium text-emerald-400 whitespace-nowrap">
-                  ✓ Cargado
+                  ✓ {confirmedExpense.exchange_rate_used == null
+                    ? 'Cargado (cotización pendiente)'
+                    : 'Cargado'}
                 </span>
               ) : isDue ? (
                 <button
@@ -236,9 +257,9 @@ export default function RecurringExpensesPage() {
                   setActionSheet({ type: 'menu', recurring });
                 }}
                 aria-label="Opciones"
-                className="w-7 h-7 flex items-center justify-center text-slate-500 hover:text-slate-300 rounded-lg hover:bg-slate-700 transition text-lg leading-none flex-shrink-0"
+                className="w-7 h-7 flex items-center justify-center text-slate-500 hover:text-slate-300 rounded-lg hover:bg-slate-700 transition flex-shrink-0"
               >
-                ⋮
+                <MoreVertical size={18} />
               </button>
             </div>
           );
@@ -269,113 +290,94 @@ export default function RecurringExpensesPage() {
 
       {/* Confirm sheet */}
       {confirmingRecurring && (
-        <>
-          <div className="fixed inset-0 z-40 bg-black/60" onClick={() => setConfirmingRecurring(null)} />
-          <div className="fixed bottom-0 left-0 right-0 z-50 bg-slate-900 rounded-t-2xl border-t border-slate-800">
-            <div className="flex justify-center pt-3 pb-1">
-              <div className="w-10 h-1 bg-slate-700 rounded-full" />
-            </div>
-            <div className="px-6 pt-3 pb-10 flex flex-col gap-4">
-              <p className="text-white font-semibold text-lg">
-                Confirmar &quot;{confirmingRecurring.description}&quot;
-              </p>
-              <p className="text-slate-400 text-sm -mt-2">
-                ¿Confirmás que el monto de este mes es este? Podés editarlo antes de confirmar.
-              </p>
-              <div className="flex items-center gap-3">
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  value={confirmAmount}
-                  onChange={(e) => setConfirmAmount(e.target.value)}
-                  className="flex-1 px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white focus:border-violet-500 focus:outline-none transition text-lg font-semibold"
-                  autoFocus
-                />
-                <span className="text-emerald-400 font-semibold">{confirmingRecurring.currency}</span>
-              </div>
-              {confirmError && <p className="text-red-400 text-sm">{confirmError}</p>}
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setConfirmingRecurring(null)}
-                  className="flex-1 py-4 bg-slate-800 hover:bg-slate-700 text-white font-semibold rounded-xl transition"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleConfirm}
-                  disabled={confirmSaving}
-                  className="flex-1 py-4 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-semibold rounded-xl transition"
-                >
-                  {confirmSaving ? 'Guardando...' : 'Confirmar'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* Action sheet backdrop */}
-      {actionSheet && (
-        <div className="fixed inset-0 z-40 bg-black/60" onClick={() => setActionSheet(null)} />
-      )}
-
-      {actionSheet?.type === 'menu' && (
-        <div className="fixed bottom-0 left-0 right-0 z-50 bg-slate-900 rounded-t-2xl border-t border-slate-800">
-          <div className="flex justify-center pt-3 pb-1">
-            <div className="w-10 h-1 bg-slate-700 rounded-full" />
-          </div>
-          <div className="px-6 pt-3 pb-10">
-            <button
-              onClick={() => {
-                setEditingRecurring(actionSheet.recurring);
-                setActionSheet(null);
-              }}
-              className="w-full flex items-center gap-4 px-4 py-4 rounded-xl hover:bg-slate-800 transition text-left"
-            >
-              <span className="text-xl">✏️</span>
-              <span className="text-white font-medium">Editar</span>
-            </button>
-            <button
-              onClick={() => setActionSheet({ type: 'deleteConfirm', recurring: actionSheet.recurring })}
-              className="w-full flex items-center gap-4 px-4 py-4 rounded-xl hover:bg-slate-800 transition text-left"
-            >
-              <span className="text-xl">🗑️</span>
-              <span className="text-red-400 font-medium">Eliminar</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {actionSheet?.type === 'deleteConfirm' && (
-        <div className="fixed bottom-0 left-0 right-0 z-50 bg-slate-900 rounded-t-2xl border-t border-slate-800">
-          <div className="flex justify-center pt-3 pb-1">
-            <div className="w-10 h-1 bg-slate-700 rounded-full" />
-          </div>
-          <div className="px-6 pt-3 pb-10">
-            <p className="text-white font-semibold text-lg mb-2">
-              ¿Eliminar &quot;{actionSheet.recurring.description}&quot;?
+        <BottomSheet onClose={() => setConfirmingRecurring(null)}>
+          <div className="flex flex-col gap-4">
+            <p className="text-white font-semibold text-lg">
+              Confirmar &quot;{confirmingRecurring.description}&quot;
             </p>
-            <p className="text-slate-400 text-sm mb-6">
-              Los gastos ya cargados de este recurrente no se borran, pero dejará de pedir confirmación
-              todos los meses.
+            <p className="text-slate-400 text-sm -mt-2">
+              ¿Confirmás que el monto de este mes es este? Podés editarlo antes de confirmar.
             </p>
+            <div className="flex items-center gap-3">
+              <MoneyInput
+                value={confirmAmount}
+                onChange={setConfirmAmount}
+                className="flex-1 px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white focus:border-violet-500 focus:outline-none transition text-lg font-semibold"
+                autoFocus
+              />
+              <span className="text-emerald-400 font-semibold">{confirmingRecurring.currency}</span>
+            </div>
+            {confirmError && <p className="text-red-400 text-sm">{confirmError}</p>}
             <div className="flex gap-3">
               <button
-                onClick={() => setActionSheet(null)}
+                onClick={() => setConfirmingRecurring(null)}
                 className="flex-1 py-4 bg-slate-800 hover:bg-slate-700 text-white font-semibold rounded-xl transition"
               >
                 Cancelar
               </button>
               <button
-                onClick={() => handleDelete(actionSheet.recurring)}
-                disabled={deleting}
-                className="flex-1 py-4 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-semibold rounded-xl transition"
+                onClick={handleConfirm}
+                disabled={confirmSaving}
+                className="flex-1 py-4 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-semibold rounded-xl transition"
               >
-                {deleting ? 'Eliminando...' : 'Eliminar'}
+                {confirmSaving ? 'Guardando...' : 'Confirmar'}
               </button>
             </div>
           </div>
-        </div>
+        </BottomSheet>
+      )}
+
+      {actionSheet?.type === 'menu' && (
+        <BottomSheet onClose={() => setActionSheet(null)}>
+          <button
+            onClick={() => {
+              setEditingRecurring(actionSheet.recurring);
+              setActionSheet(null);
+            }}
+            className="w-full flex items-center gap-4 px-4 py-4 rounded-xl hover:bg-slate-800 transition text-left"
+          >
+            <Pencil size={20} strokeWidth={1.75} className="text-slate-400" />
+            <span className="text-white font-medium">Editar</span>
+          </button>
+          <button
+            onClick={() => {
+              setDeleteError('');
+              setActionSheet({ type: 'deleteConfirm', recurring: actionSheet.recurring });
+            }}
+            className="w-full flex items-center gap-4 px-4 py-4 rounded-xl hover:bg-slate-800 transition text-left"
+          >
+            <Trash2 size={20} strokeWidth={1.75} className="text-red-400" />
+            <span className="text-red-400 font-medium">Eliminar</span>
+          </button>
+        </BottomSheet>
+      )}
+
+      {actionSheet?.type === 'deleteConfirm' && (
+        <BottomSheet onClose={() => setActionSheet(null)}>
+          <p className="text-white font-semibold text-lg mb-2">
+            ¿Eliminar &quot;{actionSheet.recurring.description}&quot;?
+          </p>
+          <p className="text-slate-400 text-sm mb-2">
+            Los gastos ya cargados de este recurrente no se borran, pero dejará de pedir confirmación
+            todos los meses.
+          </p>
+          {deleteError && <p className="text-red-400 text-sm mb-4">{deleteError}</p>}
+          <div className="flex gap-3">
+            <button
+              onClick={() => setActionSheet(null)}
+              className="flex-1 py-4 bg-slate-800 hover:bg-slate-700 text-white font-semibold rounded-xl transition"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={() => handleDelete(actionSheet.recurring)}
+              disabled={deleting}
+              className="flex-1 py-4 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-semibold rounded-xl transition"
+            >
+              {deleting ? 'Eliminando...' : 'Eliminar'}
+            </button>
+          </div>
+        </BottomSheet>
       )}
 
       <AppMenu open={menuOpen} onClose={() => setMenuOpen(false)} />

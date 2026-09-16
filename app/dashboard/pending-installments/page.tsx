@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { Category, Expense, ExpenseInstallmentPlan } from '@/lib/types';
+import { fetchUserCategories } from '@/lib/categories';
+import { Emoji } from '@/components/ui/Emoji';
 import { useCurrencyDisplay } from '@/lib/currency-display-context';
 import { pickAmount, formatMoney } from '@/lib/format-money';
 import { AppMenu } from '@/components/layout/AppMenu';
@@ -18,6 +20,7 @@ interface PlanProgress {
   remainingCount: number;
   remainingAmountArs: number;
   remainingAmountUsd: number;
+  hasPendingRemaining: boolean;
   nextDate: string | null;
   nextAmountArs: number | null;
   nextAmountUsd: number | null;
@@ -41,12 +44,12 @@ export default function PendingInstallmentsPage() {
   const fetchData = useCallback(async () => {
     if (!user) return;
     setLoading(true);
-    const [{ data: cats }, { data: plansData }, { data: exps }] = await Promise.all([
-      supabase.from('categories').select('*').eq('user_id', user.id),
+    const [cats, { data: plansData }, { data: exps }] = await Promise.all([
+      fetchUserCategories(user.id),
       supabase.from('expense_installment_plans').select('*').eq('user_id', user.id),
       supabase.from('expenses').select('*').eq('user_id', user.id).not('installment_plan_id', 'is', null),
     ]);
-    setCategories(cats ?? []);
+    setCategories(cats);
     setPlans(plansData ?? []);
     setInstallmentExpenses(exps ?? []);
     setLoading(false);
@@ -74,8 +77,9 @@ export default function PendingInstallmentsPage() {
         plan,
         doneCount: done.length,
         remainingCount: remaining.length,
-        remainingAmountArs: remaining.reduce((sum, r) => sum + r.amount_ars, 0),
-        remainingAmountUsd: remaining.reduce((sum, r) => sum + r.amount_usd, 0),
+        remainingAmountArs: remaining.reduce((sum, r) => sum + (r.amount_ars ?? 0), 0),
+        remainingAmountUsd: remaining.reduce((sum, r) => sum + (r.amount_usd ?? 0), 0),
+        hasPendingRemaining: remaining.some((r) => r.exchange_rate_used == null),
         nextDate: remaining[0]?.date ?? null,
         nextAmountArs: remaining[0]?.amount_ars ?? null,
         nextAmountUsd: remaining[0]?.amount_usd ?? null,
@@ -121,6 +125,7 @@ export default function PendingInstallmentsPage() {
             remainingCount,
             remainingAmountArs,
             remainingAmountUsd,
+            hasPendingRemaining,
             nextDate,
             nextAmountArs,
             nextAmountUsd,
@@ -136,10 +141,10 @@ export default function PendingInstallmentsPage() {
               <div className="flex items-center gap-3">
                 {cat && (
                   <div
-                    className="w-9 h-9 rounded-full flex items-center justify-center text-lg flex-shrink-0"
+                    className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
                     style={{ backgroundColor: cat.color }}
                   >
-                    {cat.icon}
+                    <Emoji emoji={cat.icon} size={16} />
                   </div>
                 )}
                 <div className="flex-1">
@@ -149,17 +154,21 @@ export default function PendingInstallmentsPage() {
                     {cat ? ` · ${cat.name}` : ''}
                   </p>
                 </div>
-                {nextAmount !== null && (
+                {nextAmount !== null ? (
                   <p className="text-white text-sm font-semibold whitespace-nowrap">
                     {formatMoney(nextAmount, showUsd)}
                   </p>
+                ) : (
+                  <p className="text-amber-400 text-xs whitespace-nowrap">Cotización pendiente</p>
                 )}
               </div>
 
               <div className="flex items-center justify-between bg-slate-900/50 rounded-lg px-3 py-2">
                 <p className="text-xs text-slate-400">
                   Restan {remainingCount} {remainingCount === 1 ? 'cuota' : 'cuotas'} ·{' '}
-                  {formatMoney(remainingAmount, showUsd)} en total
+                  {hasPendingRemaining
+                    ? 'total con cotización pendiente'
+                    : `${formatMoney(remainingAmount, showUsd)} en total`}
                 </p>
                 {nextDate && (
                   <p className="text-xs text-slate-500">

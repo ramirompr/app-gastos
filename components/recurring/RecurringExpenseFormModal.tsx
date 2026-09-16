@@ -4,12 +4,21 @@ import { useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { Category, RecurringExpense } from '@/lib/types';
+import { BottomSheet } from '@/components/ui/BottomSheet';
+import { MoneyInput } from '@/components/ui/MoneyInput';
 
 interface RecurringExpenseFormModalProps {
   recurring?: RecurringExpense;
   categories: Category[];
   onClose: () => void;
   onSaved: (recurring: RecurringExpense) => void;
+}
+
+interface FieldErrors {
+  description?: string;
+  amount?: string;
+  category?: string;
+  dayOfMonth?: string;
 }
 
 export function RecurringExpenseFormModal({
@@ -28,27 +37,34 @@ export function RecurringExpenseFormModal({
   const [dayOfMonth, setDayOfMonth] = useState(recurring ? String(recurring.day_of_month) : '1');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+
+  const clearFieldError = (field: keyof FieldErrors) => {
+    setFieldErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev));
+  };
 
   const handleSubmit = async () => {
     setError('');
-    if (!description.trim()) {
-      setError('Ingresá una descripción');
-      return;
-    }
+
     const parsedAmount = parseFloat(amount) || 0;
+    const day = parseInt(dayOfMonth, 10);
+    const errors: FieldErrors = {};
+
+    if (!description.trim()) {
+      errors.description = 'Ingresá una descripción';
+    }
     if (parsedAmount <= 0) {
-      setError('Ingresá un monto válido');
-      return;
+      errors.amount = 'Ingresá un monto válido';
     }
     if (!categoryId) {
-      setError('Elegí una categoría');
-      return;
+      errors.category = 'Elegí una categoría';
     }
-    const day = parseInt(dayOfMonth, 10);
     if (!Number.isInteger(day) || day < 1 || day > 28) {
-      setError('El día del mes debe ser entre 1 y 28');
-      return;
+      errors.dayOfMonth = 'El día del mes debe ser entre 1 y 28';
     }
+
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) return;
 
     setSaving(true);
     try {
@@ -90,96 +106,127 @@ export function RecurringExpenseFormModal({
   };
 
   return (
-    <>
-      <div className="fixed inset-0 z-40 bg-black/60" onClick={onClose} />
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-slate-900 rounded-t-2xl border-t border-slate-800 max-h-[90vh] overflow-y-auto">
-        <div className="flex justify-center pt-3 pb-1">
-          <div className="w-10 h-1 bg-slate-700 rounded-full" />
-        </div>
+    <BottomSheet onClose={onClose} panelClassName="max-h-[90vh] overflow-y-auto">
+      <div className="flex flex-col gap-5">
+        <h2 className="text-white font-semibold text-lg">
+          {isEdit ? 'Editar gasto recurrente' : 'Nuevo gasto recurrente'}
+        </h2>
 
-        <div className="px-6 pt-4 pb-10 flex flex-col gap-5">
-          <h2 className="text-white font-semibold text-lg">
-            {isEdit ? 'Editar gasto recurrente' : 'Nuevo gasto recurrente'}
-          </h2>
-
-          <div>
-            <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold mb-2">
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">
               Descripción
             </p>
-            <input
-              type="text"
-              placeholder="Ej: Netflix, Alquiler, Expensas"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:border-violet-500 focus:outline-none transition"
-              autoFocus
-            />
+            {fieldErrors.description && (
+              <p className="text-red-400 text-xs font-medium">{fieldErrors.description}</p>
+            )}
           </div>
+          <input
+            type="text"
+            placeholder="Ej: Netflix, Alquiler, Expensas"
+            value={description}
+            onChange={(e) => {
+              setDescription(e.target.value);
+              clearFieldError('description');
+            }}
+            className={`w-full px-4 py-3 bg-slate-800 border rounded-xl text-white placeholder-slate-500 focus:outline-none transition ${
+              fieldErrors.description ? 'border-red-500' : 'border-slate-700 focus:border-violet-500'
+            }`}
+            autoFocus
+          />
+        </div>
 
-          <div className="flex gap-3">
-            <div className="flex-1">
-              <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold mb-2">Monto</p>
-              <input
-                type="number"
-                inputMode="decimal"
-                placeholder="0"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:border-violet-500 focus:outline-none transition"
-              />
+        <div className="flex gap-3">
+          <div className="flex-1">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Monto</p>
+              {fieldErrors.amount && (
+                <p className="text-red-400 text-xs font-medium">{fieldErrors.amount}</p>
+              )}
             </div>
-            <button
-              onClick={() => setCurrency((c) => (c === 'ARS' ? 'USD' : 'ARS'))}
-              className="px-4 py-3 mt-6 bg-slate-800 border border-slate-700 rounded-xl text-emerald-400 font-semibold"
-            >
-              {currency}
-            </button>
-          </div>
-
-          <div>
-            <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold mb-2">
-              Categoría
-            </p>
-            <select
-              value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
-              className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white focus:border-violet-500 focus:outline-none transition"
-            >
-              <option value="">Elegí una categoría</option>
-              {categories.map((cat) => (
-                <option key={cat.id} value={cat.id}>
-                  {cat.icon} {cat.parent_id ? `↳ ${cat.name}` : cat.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold mb-2">
-              Día del mes en que se cobra
-            </p>
-            <input
-              type="number"
-              inputMode="numeric"
-              min={1}
-              max={28}
-              value={dayOfMonth}
-              onChange={(e) => setDayOfMonth(e.target.value)}
-              className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white focus:border-violet-500 focus:outline-none transition"
+            <MoneyInput
+              placeholder="0"
+              value={amount}
+              onChange={(raw) => {
+                setAmount(raw);
+                clearFieldError('amount');
+              }}
+              className={`w-full px-4 py-3 bg-slate-800 border rounded-xl text-white placeholder-slate-500 focus:outline-none transition ${
+                fieldErrors.amount ? 'border-red-500' : 'border-slate-700 focus:border-violet-500'
+              }`}
             />
           </div>
-
-          {error && <p className="text-red-400 text-sm">{error}</p>}
-
           <button
-            onClick={handleSubmit}
-            disabled={saving}
-            className="w-full py-4 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-semibold rounded-xl transition"
+            onClick={() => setCurrency((c) => (c === 'ARS' ? 'USD' : 'ARS'))}
+            className="px-4 py-3 mt-6 bg-slate-800 border border-slate-700 rounded-xl text-emerald-400 font-semibold"
           >
-            {saving ? 'Guardando...' : isEdit ? 'Guardar cambios' : 'Crear'}
+            {currency}
           </button>
         </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">
+              Categoría
+            </p>
+            {fieldErrors.category && (
+              <p className="text-red-400 text-xs font-medium">{fieldErrors.category}</p>
+            )}
+          </div>
+          <select
+            value={categoryId}
+            onChange={(e) => {
+              setCategoryId(e.target.value);
+              clearFieldError('category');
+            }}
+            className={`w-full px-4 py-3 bg-slate-800 border rounded-xl text-white focus:outline-none transition ${
+              fieldErrors.category ? 'border-red-500' : 'border-slate-700 focus:border-violet-500'
+            }`}
+          >
+            <option value="">Elegí una categoría</option>
+            {categories.map((cat) => (
+              <option key={cat.id} value={cat.id}>
+                {cat.icon} {cat.parent_id ? `↳ ${cat.name}` : cat.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">
+              Día del mes en que se cobra
+            </p>
+            {fieldErrors.dayOfMonth && (
+              <p className="text-red-400 text-xs font-medium">{fieldErrors.dayOfMonth}</p>
+            )}
+          </div>
+          <input
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={28}
+            value={dayOfMonth}
+            onChange={(e) => {
+              setDayOfMonth(e.target.value);
+              clearFieldError('dayOfMonth');
+            }}
+            className={`w-full px-4 py-3 bg-slate-800 border rounded-xl text-white focus:outline-none transition ${
+              fieldErrors.dayOfMonth ? 'border-red-500' : 'border-slate-700 focus:border-violet-500'
+            }`}
+          />
+        </div>
+
+        {error && <p className="text-red-400 text-sm">{error}</p>}
+
+        <button
+          onClick={handleSubmit}
+          disabled={saving}
+          className="w-full py-4 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-semibold rounded-xl transition"
+        >
+          {saving ? 'Guardando...' : isEdit ? 'Guardar cambios' : 'Crear'}
+        </button>
       </div>
-    </>
+    </BottomSheet>
   );
 }

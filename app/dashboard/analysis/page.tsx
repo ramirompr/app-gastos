@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { Category, Expense } from '@/lib/types';
-import { getTopLevelCategory } from '@/lib/categories';
+import { getTopLevelCategory, fetchUserCategories } from '@/lib/categories';
+import { Emoji } from '@/components/ui/Emoji';
 import { niceAxis } from '@/lib/chart-scale';
 import { useCurrencyDisplay } from '@/lib/currency-display-context';
 import { pickAmount, formatMoney } from '@/lib/format-money';
@@ -15,6 +16,7 @@ import { AppMenu } from '@/components/layout/AppMenu';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { format, startOfMonth, endOfMonth, subMonths, isSameMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { capitalize } from '@/lib/date-periods';
 
 const MONTH_OPTIONS = [3, 6, 12] as const;
 
@@ -49,15 +51,15 @@ export default function AnalysisPage() {
   const fetchData = useCallback(async () => {
     if (!user) return;
     setLoading(true);
-    const [{ data: cats }, { data: exps }] = await Promise.all([
-      supabase.from('categories').select('*').eq('user_id', user.id),
+    const [cats, { data: exps }] = await Promise.all([
+      fetchUserCategories(user.id),
       supabase
         .from('expenses')
         .select('*')
         .eq('user_id', user.id)
         .gte('date', format(rangeStart, 'yyyy-MM-dd')),
     ]);
-    setCategories(cats ?? []);
+    setCategories(cats);
     setExpenses(exps ?? []);
     setLoading(false);
   }, [user, rangeStart]);
@@ -78,7 +80,10 @@ export default function AnalysisPage() {
       const top = getTopLevelCategory(categories, exp.category_id);
       if (!top) continue;
       const prev = overallTotals.get(top.id) ?? { ars: 0, usd: 0 };
-      overallTotals.set(top.id, { ars: prev.ars + exp.amount_ars, usd: prev.usd + exp.amount_usd });
+      overallTotals.set(top.id, {
+        ars: prev.ars + (exp.amount_ars ?? 0),
+        usd: prev.usd + (exp.amount_usd ?? 0),
+      });
     }
     const orderedCategoryIds = Array.from(overallTotals.entries())
       .sort((a, b) => pickAmount(b[1].ars, b[1].usd, showUsd) - pickAmount(a[1].ars, a[1].usd, showUsd))
@@ -97,7 +102,10 @@ export default function AnalysisPage() {
         const top = getTopLevelCategory(categories, exp.category_id);
         if (!top) continue;
         const prev = monthTotals.get(top.id) ?? { ars: 0, usd: 0 };
-        monthTotals.set(top.id, { ars: prev.ars + exp.amount_ars, usd: prev.usd + exp.amount_usd });
+        monthTotals.set(top.id, {
+          ars: prev.ars + (exp.amount_ars ?? 0),
+          usd: prev.usd + (exp.amount_usd ?? 0),
+        });
       }
 
       const segments = orderedCategoryIds
@@ -144,6 +152,11 @@ export default function AnalysisPage() {
     return { months: monthBars, axisMax: max, ticks, legend, monthlyDetail };
   }, [expenses, categories, numMonths, showUsd]);
 
+  const pendingCount = useMemo(
+    () => expenses.filter((e) => e.exchange_rate_used == null).length,
+    [expenses]
+  );
+
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-950">
@@ -179,6 +192,12 @@ export default function AnalysisPage() {
           </div>
         ) : (
           <>
+            {pendingCount > 0 && (
+              <p className="text-amber-400 text-xs text-center bg-amber-400/10 rounded-lg px-3 py-2">
+                {pendingCount} {pendingCount === 1 ? 'gasto' : 'gastos'} con cotización pendiente, no
+                {pendingCount === 1 ? ' está incluido' : ' están incluidos'} en este análisis todavía.
+              </p>
+            )}
             <StackedBarChart months={months} axisMax={axisMax} ticks={ticks} isUsd={showUsd} />
 
             {legend.length === 0 ? (
@@ -220,10 +239,10 @@ export default function AnalysisPage() {
                               className="flex items-center gap-3 bg-slate-800/60 rounded-xl px-3 py-2"
                             >
                               <div
-                                className="w-8 h-8 rounded-full flex items-center justify-center text-sm flex-shrink-0"
+                                className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
                                 style={{ backgroundColor: row.category.color }}
                               >
-                                {row.category.icon}
+                                <Emoji emoji={row.category.icon} size={14} />
                               </div>
                               <p className="flex-1 text-white text-xs font-medium truncate">
                                 {row.category.name}
@@ -248,8 +267,4 @@ export default function AnalysisPage() {
       <AppMenu open={menuOpen} onClose={() => setMenuOpen(false)} />
     </div>
   );
-}
-
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
 }

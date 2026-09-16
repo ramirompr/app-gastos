@@ -5,12 +5,17 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { Category, Expense } from '@/lib/types';
-import { calculateAmountsInBothCurrencies } from '@/lib/exchange-rates';
+import { fetchUserCategories } from '@/lib/categories';
+import { calculateAmountsInBothCurrencies, tryCalculateAmountsInBothCurrencies } from '@/lib/exchange-rates';
 import { computeInstallments } from '@/lib/installments';
 import { CategoryFormModal } from '@/components/categories/CategoryFormModal';
 import { AppMenu } from '@/components/layout/AppMenu';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PlusIcon } from '@/components/icons/PlusIcon';
+import { BottomSheet } from '@/components/ui/BottomSheet';
+import { Emoji } from '@/components/ui/Emoji';
+import { MoneyInput } from '@/components/ui/MoneyInput';
+import { Calendar } from 'lucide-react';
 import { format, subDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -24,6 +29,13 @@ const SPLIT_OPTIONS: { value: SplitType; label: string }[] = [
 
 interface ExpenseFormProps {
   expense?: Expense;
+}
+
+interface FieldErrors {
+  amount?: string;
+  category?: string;
+  partnerShare?: string;
+  installments?: string;
 }
 
 export function ExpenseForm({ expense }: ExpenseFormProps) {
@@ -63,6 +75,11 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
   const [comment, setComment] = useState(expense?.description ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+
+  const clearFieldError = (field: keyof FieldErrors) => {
+    setFieldErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev));
+  };
 
   useEffect(() => {
     if (!authLoading && !user) router.push('/login');
@@ -70,8 +87,7 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
 
   const fetchCategories = useCallback(async () => {
     if (!user) return;
-    const { data } = await supabase.from('categories').select('*').eq('user_id', user.id);
-    setCategories(data ?? []);
+    setCategories(await fetchUserCategories(user.id));
     setLoadingCategories(false);
   }, [user]);
 
@@ -114,48 +130,51 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
       setSubcategoryPicker(cat);
     } else {
       setSelectedCategoryId(cat.id);
+      clearFieldError('category');
     }
   };
 
   const handleSubmit = async () => {
     setError('');
+
+    const partnerShareTotal = parseFloat(partnerShare) || 0;
+    const errors: FieldErrors = {};
+
     if (parsedAmount <= 0) {
-      setError('Ingresá un monto válido');
-      return;
+      errors.amount = 'Ingresá un monto válido';
     }
     if (!selectedCategory) {
-      setError('Elegí una categoría');
-      return;
+      errors.category = 'Elegí una categoría';
     }
-    const partnerShareTotal = parseFloat(partnerShare) || 0;
     if (splitType !== 'personal' && partnerShareTotal <= 0) {
-      setError(
-        splitType === 'shared' ? 'Ingresá cuánto te tiene que devolver' : 'Ingresá cuánto invitaste'
-      );
-      return;
-    }
-    if (splitType !== 'personal' && partnerShareTotal > parsedAmount) {
-      setError(
+      errors.partnerShare =
+        splitType === 'shared' ? 'Ingresá cuánto te tiene que devolver' : 'Ingresá cuánto invitaste';
+    } else if (splitType !== 'personal' && partnerShareTotal > parsedAmount) {
+      errors.partnerShare =
         splitType === 'shared'
           ? 'Ese monto no puede ser mayor al total del gasto'
-          : 'El monto invitado no puede ser mayor al total del gasto'
-      );
-      return;
+          : 'El monto invitado no puede ser mayor al total del gasto';
     }
     if (
       !isEdit &&
       installmentsEnabled &&
       (!Number.isInteger(effectiveInstallments) || effectiveInstallments < 2)
     ) {
-      setError('Ingresá una cantidad de cuotas válida (mayor a 1)');
-      return;
+      errors.installments = 'Ingresá una cantidad de cuotas válida (mayor a 1)';
     }
+
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+    if (!selectedCategory) return; // ya cubierto por errors.category, solo para que TS lo sepa
 
     setSaving(true);
     try {
       const description = comment.trim() || selectedCategory.name;
 
       if (isEdit) {
+        // A diferencia de la creación, en una edición no queremos degradar
+        // silenciosamente un gasto ya resuelto a "pendiente" si la cotización
+        // falla: mejor abortar el guardado y mostrar el error (catch de abajo).
         const { amount_ars, amount_usd, exchange_rate_used } = await calculateAmountsInBothCurrencies(
           parsedAmount,
           currency,
@@ -212,7 +231,20 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
         const rows = await Promise.all(
           amountInstallments.map(async (item) => {
             const { amount_ars, amount_usd, exchange_rate_used } =
-              await calculateAmountsInBothCurrencies(item.amount, currency, item.date);
+              await tryCalculateAmountsInBothCurrencies(item.amount, currency, item.date);
+
+            // El total y la parte de la pareja se reparten en cuotas por
+            // separado, así que cada uno puede redondear el resto de forma
+            // distinta en la primera cuota. Limitamos partner_share al monto
+            // de esa misma cuota para que nunca quede "te deben más de lo
+            // que vale la cuota".
+            const partnerAmountForItem = partnerInstallments
+              ? Math.min(
+                  partnerInstallments.find((p) => p.installmentNumber === item.installmentNumber)!.amount,
+                  item.amount
+                )
+              : null;
+
             return {
               user_id: user!.id,
               category_id: selectedCategory.id,
@@ -224,10 +256,7 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
               exchange_rate_used,
               date: format(item.date, 'yyyy-MM-dd'),
               split_type: splitType,
-              partner_share:
-                splitType !== 'personal'
-                  ? partnerInstallments!.find((p) => p.installmentNumber === item.installmentNumber)!.amount
-                  : null,
+              partner_share: splitType !== 'personal' ? partnerAmountForItem : null,
               shared_with: splitType === 'shared' ? sharedWith.trim() || null : null,
               installment_plan_id: plan.id,
               installment_number: item.installmentNumber,
@@ -238,7 +267,7 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
         const { error: expensesError } = await supabase.from('expenses').insert(rows);
         if (expensesError) throw expensesError;
       } else {
-        const { amount_ars, amount_usd, exchange_rate_used } = await calculateAmountsInBothCurrencies(
+        const { amount_ars, amount_usd, exchange_rate_used } = await tryCalculateAmountsInBothCurrencies(
           parsedAmount,
           currency,
           selectedDate
@@ -290,27 +319,48 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
 
       <div className="px-4 flex flex-col gap-8">
         {/* Amount */}
-        <div className="flex items-end gap-3 justify-center py-4">
-          <input
-            type="number"
-            inputMode="decimal"
-            placeholder="0"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            className="text-4xl font-bold bg-transparent text-white placeholder-slate-700 text-right w-40 focus:outline-none border-b-2 border-slate-800 focus:border-violet-500"
-            autoFocus
-          />
-          <button
-            onClick={() => setCurrency((c) => (c === 'ARS' ? 'USD' : 'ARS'))}
-            className="text-emerald-400 font-semibold pb-2"
-          >
-            {currency}
-          </button>
+        <div className="flex flex-col items-center py-4">
+          {fieldErrors.amount && (
+            <p className="text-red-400 text-xs font-medium mb-1">{fieldErrors.amount}</p>
+          )}
+          <div className="flex items-end gap-3">
+            <MoneyInput
+              placeholder="0"
+              value={amount}
+              onChange={(raw) => {
+                setAmount(raw);
+                clearFieldError('amount');
+              }}
+              className={`text-4xl font-bold bg-transparent text-white placeholder-slate-700 text-right w-40 focus:outline-none border-b-2 transition-colors ${
+                fieldErrors.amount
+                  ? 'border-red-500'
+                  : 'border-slate-800 focus:border-violet-500'
+              }`}
+              autoFocus
+            />
+            <button
+              onClick={() => setCurrency((c) => (c === 'ARS' ? 'USD' : 'ARS'))}
+              className="text-emerald-400 font-semibold pb-2"
+            >
+              {currency}
+            </button>
+          </div>
         </div>
 
         {/* Categories */}
         <div>
-          <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold mb-3">Categorías</p>
+          <div className="flex items-center justify-between mb-3">
+            <p
+              className={`text-xs uppercase tracking-wider font-semibold ${
+                fieldErrors.category ? 'text-red-400' : 'text-slate-500'
+              }`}
+            >
+              Categorías
+            </p>
+            {fieldErrors.category && (
+              <p className="text-red-400 text-xs font-medium">{fieldErrors.category}</p>
+            )}
+          </div>
           <div className="grid grid-cols-4 gap-3">
             {topLevel.map((cat) => {
               const isSelected =
@@ -322,14 +372,14 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
                   className="flex flex-col items-center gap-1.5"
                 >
                   <div
-                    className="w-12 h-12 rounded-full flex items-center justify-center text-xl transition-all"
+                    className="w-12 h-12 rounded-full flex items-center justify-center transition-all"
                     style={{
                       backgroundColor: cat.color,
                       outline: isSelected ? '3px solid white' : '3px solid transparent',
                       outlineOffset: '2px',
                     }}
                   >
-                    {cat.icon}
+                    <Emoji emoji={cat.icon} size={22} />
                   </div>
                   <p className="text-slate-300 text-xs text-center leading-tight line-clamp-1">
                     {cat.name}
@@ -379,11 +429,12 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
                 setDateOption('custom');
                 setShowDatePicker(true);
               }}
-              className={`px-3 py-2 rounded-xl text-sm font-medium transition ${
+              className={`px-3 py-2 rounded-xl text-sm font-medium transition inline-flex items-center gap-1.5 ${
                 dateOption === 'custom' ? 'bg-violet-600 text-white' : 'bg-slate-800 text-slate-400'
               }`}
             >
-              📅 {dateOption === 'custom' ? format(selectedDate, "d MMM", { locale: es }) : ''}
+              <Calendar size={16} />
+              {dateOption === 'custom' ? format(selectedDate, "d MMM", { locale: es }) : ''}
             </button>
           </div>
           {showDatePicker && (
@@ -416,14 +467,24 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
             ))}
           </div>
           {splitType !== 'personal' && (
-            <input
-              type="number"
-              inputMode="decimal"
-              placeholder={splitType === 'shared' ? 'Cuánto te tiene que devolver' : 'Cuánto invitaste'}
-              value={partnerShare}
-              onChange={(e) => setPartnerShare(e.target.value)}
-              className="mt-3 w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:border-violet-500 focus:outline-none transition"
-            />
+            <>
+              {fieldErrors.partnerShare && (
+                <p className="text-red-400 text-xs font-medium mt-3">{fieldErrors.partnerShare}</p>
+              )}
+              <MoneyInput
+                placeholder={splitType === 'shared' ? 'Cuánto te tiene que devolver' : 'Cuánto invitaste'}
+                value={partnerShare}
+                onChange={(raw) => {
+                  setPartnerShare(raw);
+                  clearFieldError('partnerShare');
+                }}
+                className={`w-full px-4 py-3 bg-slate-800 border rounded-xl text-white placeholder-slate-500 focus:outline-none transition ${
+                  fieldErrors.partnerShare
+                    ? 'mt-1 border-red-500'
+                    : 'mt-3 border-slate-700 focus:border-violet-500'
+                }`}
+              />
+            </>
           )}
           {splitType === 'shared' && (
             <input
@@ -473,6 +534,7 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
                       onClick={() => {
                         setNumInstallments(n);
                         setCustomInstallments(false);
+                        clearFieldError('installments');
                       }}
                       className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition ${
                         !customInstallments && numInstallments === n
@@ -492,14 +554,24 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
                     Otro
                   </button>
                 </div>
+                {fieldErrors.installments && (
+                  <p className="text-red-400 text-xs font-medium">{fieldErrors.installments}</p>
+                )}
                 {customInstallments && (
                   <input
                     type="text"
                     inputMode="numeric"
                     placeholder="Cantidad de cuotas"
                     value={customInstallmentsValue}
-                    onChange={(e) => setCustomInstallmentsValue(e.target.value.replace(/[^0-9]/g, ''))}
-                    className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:border-violet-500 focus:outline-none transition"
+                    onChange={(e) => {
+                      setCustomInstallmentsValue(e.target.value.replace(/[^0-9]/g, ''));
+                      clearFieldError('installments');
+                    }}
+                    className={`w-full px-4 py-3 bg-slate-800 border rounded-xl text-white placeholder-slate-500 focus:outline-none transition ${
+                      fieldErrors.installments
+                        ? 'border-red-500'
+                        : 'border-slate-700 focus:border-violet-500'
+                    }`}
                   />
                 )}
                 {installmentPreview.length > 0 && (
@@ -543,52 +615,46 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
 
       {/* Subcategory picker */}
       {subcategoryPicker && (
-        <>
-          <div className="fixed inset-0 z-40 bg-black/60" onClick={() => setSubcategoryPicker(null)} />
-          <div className="fixed bottom-0 left-0 right-0 z-50 bg-slate-900 rounded-t-2xl border-t border-slate-800">
-            <div className="flex justify-center pt-3 pb-1">
-              <div className="w-10 h-1 bg-slate-700 rounded-full" />
-            </div>
-            <div className="px-6 pt-3 pb-10">
-              <p className="text-white font-semibold mb-4">{subcategoryPicker.name}</p>
-              <div className="flex flex-col gap-1">
-                <button
-                  onClick={() => {
-                    setSelectedCategoryId(subcategoryPicker.id);
-                    setSubcategoryPicker(null);
-                  }}
-                  className="w-full flex items-center gap-4 px-4 py-3 rounded-xl hover:bg-slate-800 transition text-left"
+        <BottomSheet onClose={() => setSubcategoryPicker(null)}>
+          <p className="text-white font-semibold mb-4">{subcategoryPicker.name}</p>
+          <div className="flex flex-col gap-1">
+            <button
+              onClick={() => {
+                setSelectedCategoryId(subcategoryPicker.id);
+                setSubcategoryPicker(null);
+                clearFieldError('category');
+              }}
+              className="w-full flex items-center gap-4 px-4 py-3 rounded-xl hover:bg-slate-800 transition text-left"
+            >
+              <span
+                className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                style={{ backgroundColor: subcategoryPicker.color }}
+              >
+                <Emoji emoji={subcategoryPicker.icon} size={18} />
+              </span>
+              <span className="text-white font-medium">General</span>
+            </button>
+            {subsOf(subcategoryPicker.id).map((sub) => (
+              <button
+                key={sub.id}
+                onClick={() => {
+                  setSelectedCategoryId(sub.id);
+                  setSubcategoryPicker(null);
+                  clearFieldError('category');
+                }}
+                className="w-full flex items-center gap-4 px-4 py-3 rounded-xl hover:bg-slate-800 transition text-left"
+              >
+                <span
+                  className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                  style={{ backgroundColor: sub.color }}
                 >
-                  <span
-                    className="w-9 h-9 rounded-lg flex items-center justify-center text-lg flex-shrink-0"
-                    style={{ backgroundColor: subcategoryPicker.color }}
-                  >
-                    {subcategoryPicker.icon}
-                  </span>
-                  <span className="text-white font-medium">General</span>
-                </button>
-                {subsOf(subcategoryPicker.id).map((sub) => (
-                  <button
-                    key={sub.id}
-                    onClick={() => {
-                      setSelectedCategoryId(sub.id);
-                      setSubcategoryPicker(null);
-                    }}
-                    className="w-full flex items-center gap-4 px-4 py-3 rounded-xl hover:bg-slate-800 transition text-left"
-                  >
-                    <span
-                      className="w-9 h-9 rounded-lg flex items-center justify-center text-lg flex-shrink-0"
-                      style={{ backgroundColor: sub.color }}
-                    >
-                      {sub.icon}
-                    </span>
-                    <span className="text-white font-medium">{sub.name}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
+                  <Emoji emoji={sub.icon} size={18} />
+                </span>
+                <span className="text-white font-medium">{sub.name}</span>
+              </button>
+            ))}
           </div>
-        </>
+        </BottomSheet>
       )}
 
       {/* Create category modal */}

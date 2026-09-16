@@ -63,6 +63,6 @@ export function getPeriodLabel(period: Period, anchor: Date): string {
   }
 }
 
-function capitalize(s: string): string {
+export function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }

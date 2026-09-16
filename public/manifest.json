@@ -4,8 +4,8 @@
   "description": "Seguimiento personal de gastos en ARS y USD",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#ffffff",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
   "orientation": "portrait-primary",
   "scope": "/",
   "icons": [
@@ -20,13 +20,6 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
-    }
-    ],
-  "screenshots": [
-    {
-      "src": "/screenshot-1.png",
-      "sizes": "540x720",
-      "type": "image/png"
     }
   ]
 }

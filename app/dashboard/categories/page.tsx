@@ -9,6 +9,9 @@ import { CategoryFormModal } from '@/components/categories/CategoryFormModal';
 import { AppMenu } from '@/components/layout/AppMenu';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PlusIcon } from '@/components/icons/PlusIcon';
+import { BottomSheet } from '@/components/ui/BottomSheet';
+import { Emoji } from '@/components/ui/Emoji';
+import { MoreVertical, Pencil, Trash2, Tags } from 'lucide-react';
 
 type ActionSheet =
   | { type: 'menu'; category: Category }
@@ -23,6 +26,7 @@ export default function CategoriesPage() {
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [actionSheet, setActionSheet] = useState<ActionSheet | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -58,13 +62,16 @@ export default function CategoriesPage() {
 
   const handleDelete = async (category: Category) => {
     setDeleting(true);
+    setDeleteError('');
     try {
       const { error } = await supabase.from('categories').delete().eq('id', category.id);
       if (error) throw error;
       setAllCategories((prev) => prev.filter((c) => c.id !== category.id && c.parent_id !== category.id));
       setActionSheet(null);
     } catch {
-      // keep sheet open on error
+      setDeleteError(
+        'No se pudo eliminar. Puede que todavía tenga gastos asociados: movelos o borralos primero.'
+      );
     } finally {
       setDeleting(false);
     }
@@ -99,7 +106,7 @@ export default function CategoriesPage() {
       <div className="px-4">
         {topLevel.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
-            <div className="text-6xl mb-4">🗂️</div>
+            <Tags size={56} strokeWidth={1.25} className="text-slate-700 mb-4" />
             <p className="text-slate-400 mb-1 font-medium">No tenés categorías todavía</p>
             <p className="text-slate-600 text-sm">Tocá el + para crear la primera</p>
           </div>
@@ -113,19 +120,19 @@ export default function CategoriesPage() {
                   onClick={() => router.push(`/dashboard/categories/${cat.id}`)}
                   className="relative bg-slate-800 border border-slate-700/50 rounded-2xl p-4 flex flex-col items-center gap-3 hover:border-slate-600 active:scale-95 transition-all cursor-pointer"
                 >
-                  {/* ⋮ menu button */}
                   <button
                     onClick={(e) => openMenu(e, cat)}
-                    className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center text-slate-500 hover:text-slate-300 rounded-lg hover:bg-slate-700 transition text-lg leading-none"
+                    aria-label="Opciones"
+                    className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center text-slate-500 hover:text-slate-300 rounded-lg hover:bg-slate-700 transition"
                   >
-                    ⋮
+                    <MoreVertical size={18} />
                   </button>
 
                   <div
-                    className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shadow-lg"
+                    className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg"
                     style={{ backgroundColor: cat.color }}
                   >
-                    {cat.icon}
+                    <Emoji emoji={cat.icon} size={30} />
                   </div>
                   <div className="text-center">
                     <p className="text-white font-medium text-sm leading-tight">{cat.name}</p>
@@ -172,94 +179,78 @@ export default function CategoriesPage() {
         />
       )}
 
-      {/* Action sheet backdrop */}
-      {actionSheet && (
-        <div
-          className="fixed inset-0 z-40 bg-black/60"
-          onClick={() => setActionSheet(null)}
-        />
-      )}
-
       {/* Action sheet: menu */}
       {actionSheet?.type === 'menu' && (
-        <div className="fixed bottom-0 left-0 right-0 z-50 bg-slate-900 rounded-t-2xl border-t border-slate-800">
-          <div className="flex justify-center pt-3 pb-1">
-            <div className="w-10 h-1 bg-slate-700 rounded-full" />
-          </div>
-          <div className="px-6 pt-3 pb-10">
-            {/* Category header */}
-            <div className="flex items-center gap-3 mb-6">
-              <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-                style={{ backgroundColor: actionSheet.category.color }}
-              >
-                {actionSheet.category.icon}
-              </div>
-              <p className="text-white font-semibold">{actionSheet.category.name}</p>
+        <BottomSheet onClose={() => setActionSheet(null)}>
+          {/* Category header */}
+          <div className="flex items-center gap-3 mb-6">
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+              style={{ backgroundColor: actionSheet.category.color }}
+            >
+              <Emoji emoji={actionSheet.category.icon} size={22} />
             </div>
-
-            <button
-              onClick={() => {
-                setEditingCategory(actionSheet.category);
-                setActionSheet(null);
-              }}
-              className="w-full flex items-center gap-4 px-4 py-4 rounded-xl hover:bg-slate-800 transition text-left"
-            >
-              <span className="text-xl">✏️</span>
-              <span className="text-white font-medium">Editar</span>
-            </button>
-
-            <button
-              onClick={() =>
-                setActionSheet({
-                  type: 'deleteConfirm',
-                  category: actionSheet.category,
-                  subCount: subCount(actionSheet.category.id),
-                })
-              }
-              className="w-full flex items-center gap-4 px-4 py-4 rounded-xl hover:bg-slate-800 transition text-left"
-            >
-              <span className="text-xl">🗑️</span>
-              <span className="text-red-400 font-medium">Eliminar</span>
-            </button>
+            <p className="text-white font-semibold">{actionSheet.category.name}</p>
           </div>
-        </div>
+
+          <button
+            onClick={() => {
+              setEditingCategory(actionSheet.category);
+              setActionSheet(null);
+            }}
+            className="w-full flex items-center gap-4 px-4 py-4 rounded-xl hover:bg-slate-800 transition text-left"
+          >
+            <Pencil size={20} strokeWidth={1.75} className="text-slate-400" />
+            <span className="text-white font-medium">Editar</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setDeleteError('');
+              setActionSheet({
+                type: 'deleteConfirm',
+                category: actionSheet.category,
+                subCount: subCount(actionSheet.category.id),
+              });
+            }}
+            className="w-full flex items-center gap-4 px-4 py-4 rounded-xl hover:bg-slate-800 transition text-left"
+          >
+            <Trash2 size={20} strokeWidth={1.75} className="text-red-400" />
+            <span className="text-red-400 font-medium">Eliminar</span>
+          </button>
+        </BottomSheet>
       )}
 
       {/* Action sheet: delete confirm */}
       {actionSheet?.type === 'deleteConfirm' && (
-        <div className="fixed bottom-0 left-0 right-0 z-50 bg-slate-900 rounded-t-2xl border-t border-slate-800">
-          <div className="flex justify-center pt-3 pb-1">
-            <div className="w-10 h-1 bg-slate-700 rounded-full" />
-          </div>
-          <div className="px-6 pt-3 pb-10">
-            <p className="text-white font-semibold text-lg mb-2">
-              ¿Eliminar {actionSheet.category.name}?
+        <BottomSheet onClose={() => setActionSheet(null)}>
+          <p className="text-white font-semibold text-lg mb-2">
+            ¿Eliminar {actionSheet.category.name}?
+          </p>
+          {actionSheet.subCount > 0 && (
+            <p className="text-amber-400 text-sm mb-4">
+              También se van a eliminar sus {actionSheet.subCount}{' '}
+              {actionSheet.subCount === 1 ? 'subcategoría' : 'subcategorías'}.
             </p>
-            {actionSheet.subCount > 0 && (
-              <p className="text-amber-400 text-sm mb-4">
-                También se van a eliminar sus {actionSheet.subCount}{' '}
-                {actionSheet.subCount === 1 ? 'subcategoría' : 'subcategorías'}.
-              </p>
-            )}
-            <p className="text-slate-400 text-sm mb-6">Esta acción no se puede deshacer.</p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setActionSheet(null)}
-                className="flex-1 py-4 bg-slate-800 hover:bg-slate-700 text-white font-semibold rounded-xl transition"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={() => handleDelete(actionSheet.category)}
-                disabled={deleting}
-                className="flex-1 py-4 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-semibold rounded-xl transition"
-              >
-                {deleting ? 'Eliminando...' : 'Eliminar'}
-              </button>
-            </div>
+          )}
+          <p className="text-slate-400 text-sm mb-2">Esta acción no se puede deshacer.</p>
+          {deleteError && <p className="text-red-400 text-sm mb-4">{deleteError}</p>}
+          <div className="flex gap-3">
+            <button
+              onClick={() => setActionSheet(null)}
+              className="flex-1 py-4 bg-slate-800 hover:bg-slate-700 text-white font-semibold rounded-xl transition"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={() => handleDelete(actionSheet.category)}
+              disabled={deleting}
+              className="flex-1 py-4 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-semibold rounded-xl transition"
+            >
+              {deleting ? 'Eliminando...' : 'Eliminar'}
+            </button>
           </div>
-        </div>
+        </BottomSheet>
       )}
 
       <AppMenu open={menuOpen} onClose={() => setMenuOpen(false)} />

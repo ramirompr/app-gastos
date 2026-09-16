@@ -13,6 +13,13 @@ export const metadata: Metadata = {
   title: "Mis Gastos",
   description: "Seguimiento personal de gastos",
   manifest: "/manifest.json",
+  icons: {
+    icon: [
+      { url: "/icon-192x192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512x512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: "/icon-192x192.png",
+  },
 };
 
 export default function RootLayout({

@@ -1,6 +1,7 @@
 'use client';
 
 import { ChevronLeftIcon } from '@/components/icons/ChevronLeftIcon';
+import { Menu } from 'lucide-react';
 
 interface PageHeaderProps {
   title: string;
@@ -26,9 +27,9 @@ export function PageHeader({ title, onBack, onMenu }: PageHeaderProps) {
       <button
         onClick={onMenu}
         aria-label="Menú"
-        className="ml-auto text-white text-2xl leading-none z-10 flex-shrink-0"
+        className="ml-auto text-white z-10 flex-shrink-0"
       >
-        ☰
+        <Menu size={24} strokeWidth={2} />
       </button>
     </div>
   );

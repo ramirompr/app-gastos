@@ -5,9 +5,11 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { Category, Expense } from '@/lib/types';
-import { getTopLevelCategory } from '@/lib/categories';
+import { getTopLevelCategory, fetchUserCategories } from '@/lib/categories';
+import { Emoji } from '@/components/ui/Emoji';
 import { useCurrencyDisplay } from '@/lib/currency-display-context';
 import { pickAmount, formatMoney } from '@/lib/format-money';
+import { resolvePendingExchangeRates } from '@/lib/expenses';
 import { DonutChart } from '@/components/dashboard/DonutChart';
 import { AppMenu } from '@/components/layout/AppMenu';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -58,8 +60,8 @@ export default function DashboardPage() {
   const fetchData = useCallback(async () => {
     if (!user) return;
     setLoading(true);
-    const [{ data: cats }, { data: exps }] = await Promise.all([
-      supabase.from('categories').select('*').eq('user_id', user.id),
+    const [cats, { data: exps }] = await Promise.all([
+      fetchUserCategories(user.id),
       supabase
         .from('expenses')
         .select('*')
@@ -67,7 +69,7 @@ export default function DashboardPage() {
         .gte('date', format(range.start, 'yyyy-MM-dd'))
         .lte('date', format(range.end, 'yyyy-MM-dd')),
     ]);
-    setCategories(cats ?? []);
+    setCategories(cats);
     setExpenses(exps ?? []);
     setLoading(false);
   }, [user, range]);
@@ -76,13 +78,27 @@ export default function DashboardPage() {
     if (user) fetchData();
   }, [user, fetchData]);
 
+  useEffect(() => {
+    if (!user) return;
+    resolvePendingExchangeRates(user.id).then((count) => {
+      if (count > 0) fetchData();
+    });
+    // Solo una vez por apertura del dashboard, no hace falta repetirlo por cada refetch de rango.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  const pendingCount = useMemo(
+    () => expenses.filter((e) => e.exchange_rate_used == null).length,
+    [expenses]
+  );
+
   const breakdown = useMemo(() => {
     const totals = new Map<string, { ars: number; usd: number }>();
     for (const exp of expenses) {
       const top = getTopLevelCategory(categories, exp.category_id);
       if (!top) continue;
       const prev = totals.get(top.id) ?? { ars: 0, usd: 0 };
-      totals.set(top.id, { ars: prev.ars + exp.amount_ars, usd: prev.usd + exp.amount_usd });
+      totals.set(top.id, { ars: prev.ars + (exp.amount_ars ?? 0), usd: prev.usd + (exp.amount_usd ?? 0) });
     }
     const total = Array.from(totals.values()).reduce(
       (sum, t) => sum + pickAmount(t.ars, t.usd, showUsd),
@@ -227,6 +243,13 @@ export default function DashboardPage() {
 
       {/* Category breakdown */}
       <div className="px-4 flex flex-col gap-3">
+        {!loading && pendingCount > 0 && (
+          <p className="text-amber-400 text-xs text-center bg-amber-400/10 rounded-lg px-3 py-2">
+            {pendingCount} {pendingCount === 1 ? 'gasto' : 'gastos'} con cotización del dólar
+            pendiente — no {pendingCount === 1 ? 'está incluido' : 'están incluidos'} en el total
+            todavía.
+          </p>
+        )}
         {!loading && breakdown.length === 0 && (
           <p className="text-center text-slate-500 text-sm py-12">
             No hay gastos cargados en este período.
@@ -243,10 +266,10 @@ export default function DashboardPage() {
             className="flex items-center gap-3 bg-slate-800/60 rounded-xl px-4 py-3 cursor-pointer hover:bg-slate-800 active:scale-[0.98] transition-all"
           >
             <div
-              className="w-10 h-10 rounded-full flex items-center justify-center text-lg flex-shrink-0"
+              className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
               style={{ backgroundColor: category.color }}
             >
-              {category.icon}
+              <Emoji emoji={category.icon} size={18} />
             </div>
             <p className="flex-1 text-white text-sm font-medium">{category.name}</p>
             <p className="text-slate-500 text-sm w-10 text-right">{percent} %</p>

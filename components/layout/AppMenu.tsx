@@ -2,25 +2,38 @@
 
 import { useRouter } from 'next/navigation';
 import { useCurrencyDisplay } from '@/lib/currency-display-context';
+import { useAuth } from '@/lib/auth-context';
+import {
+  Home,
+  Tags,
+  Receipt,
+  BarChart3,
+  Repeat,
+  HandCoins,
+  CalendarClock,
+  LogOut,
+  type LucideIcon,
+} from 'lucide-react';
 
 interface AppMenuProps {
   open: boolean;
   onClose: () => void;
 }
 
-const MENU_ITEMS = [
-  { href: '/dashboard', label: 'Home', icon: '🏠' },
-  { href: '/dashboard/categories', label: 'Categorías', icon: '🗂️' },
-  { href: '/dashboard/history', label: 'Historial', icon: '🧾' },
-  { href: '/dashboard/analysis', label: 'Análisis', icon: '📊' },
-  { href: '/dashboard/recurring', label: 'Gastos recurrentes', icon: '🔁' },
-  { href: '/dashboard/pending-payments', label: 'Pagos pendientes', icon: '💸' },
-  { href: '/dashboard/pending-installments', label: 'Cuotas pendientes', icon: '📆' },
+const MENU_ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
+  { href: '/dashboard', label: 'Home', icon: Home },
+  { href: '/dashboard/categories', label: 'Categorías', icon: Tags },
+  { href: '/dashboard/analysis', label: 'Análisis', icon: BarChart3 },
+  { href: '/dashboard/history', label: 'Historial de gastos', icon: Receipt },
+  { href: '/dashboard/pending-installments', label: 'Cuotas pendientes', icon: CalendarClock },
+  { href: '/dashboard/recurring', label: 'Gastos recurrentes', icon: Repeat },
+  { href: '/dashboard/pending-payments', label: 'Pagos pendientes', icon: HandCoins },
 ];
 
 export function AppMenu({ open, onClose }: AppMenuProps) {
   const router = useRouter();
   const { showUsd, setShowUsd } = useCurrencyDisplay();
+  const { signOut } = useAuth();
 
   return (
     <>
@@ -70,10 +83,24 @@ export function AppMenu({ open, onClose }: AppMenuProps) {
             }}
             className="flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-800 transition text-left"
           >
-            <span className="text-xl">{item.icon}</span>
+            <item.icon size={20} strokeWidth={1.75} className="text-slate-400 flex-shrink-0" />
             <span className="text-white font-medium">{item.label}</span>
           </button>
         ))}
+
+        <div className="mt-auto pt-3 border-t border-slate-800">
+          <button
+            onClick={async () => {
+              onClose();
+              await signOut();
+              router.push('/login');
+            }}
+            className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-800 transition text-left"
+          >
+            <LogOut size={20} strokeWidth={1.75} className="text-red-400 flex-shrink-0" />
+            <span className="text-red-400 font-medium">Cerrar sesión</span>
+          </button>
+        </div>
       </div>
     </>
   );

@@ -5,9 +5,12 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { Category, Expense, ExpenseInstallmentPlan } from '@/lib/types';
+import { fetchUserCategories } from '@/lib/categories';
+import { Emoji } from '@/components/ui/Emoji';
+import { ChevronUp, ChevronDown, Repeat } from 'lucide-react';
 import { settleSharedExpense, deleteExpense } from '@/lib/expenses';
 import { useCurrencyDisplay } from '@/lib/currency-display-context';
-import { pickAmount, formatMoney, partnerShareInArsUsd } from '@/lib/format-money';
+import { pickAmount, formatMoney, formatExpenseAmount, formatPartnerShare } from '@/lib/format-money';
 import { AppMenu } from '@/components/layout/AppMenu';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { ExpenseRowMenu } from '@/components/expenses/ExpenseRowMenu';
@@ -43,9 +46,9 @@ export default function HistoryPage() {
   const fetchData = useCallback(async () => {
     if (!user) return;
     setLoading(true);
-    const [{ data: cats }, { data: plainExps }, { data: plansData }, { data: installExps }] =
+    const [cats, { data: plainExps }, { data: plansData }, { data: installExps }] =
       await Promise.all([
-        supabase.from('categories').select('*').eq('user_id', user.id),
+        fetchUserCategories(user.id),
         supabase
           .from('expenses')
           .select('*')
@@ -56,7 +59,7 @@ export default function HistoryPage() {
         supabase.from('expense_installment_plans').select('*').eq('user_id', user.id),
         supabase.from('expenses').select('*').eq('user_id', user.id).not('installment_plan_id', 'is', null),
       ]);
-    setCategories(cats ?? []);
+    setCategories(cats);
     setPlainExpenses(plainExps ?? []);
     setPlans(plansData ?? []);
     setInstallmentExpenses(installExps ?? []);
@@ -89,22 +92,36 @@ export default function HistoryPage() {
   const visibleItems = items.slice(0, visibleCount);
   const hasMore = visibleCount < items.length;
 
+  const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
+
   const markSettled = async (expense: Expense) => {
     setUpdatingId(expense.id);
+    setRowError(null);
     try {
       const updated = await settleSharedExpense(expense);
       setPlainExpenses((prev) => prev.map((e) => (e.id === expense.id ? updated : e)));
       setInstallmentExpenses((prev) => prev.map((e) => (e.id === expense.id ? updated : e)));
     } catch (err) {
       console.error(err);
+      setRowError({
+        id: expense.id,
+        message: err instanceof Error ? err.message : 'No se pudo marcar como pagado. Intentá de nuevo.',
+      });
     }
     setUpdatingId(null);
   };
 
   const handleDeleteExpense = async (id: string) => {
-    await deleteExpense(id);
-    setPlainExpenses((prev) => prev.filter((e) => e.id !== id));
-    setInstallmentExpenses((prev) => prev.filter((e) => e.id !== id));
+    setRowError(null);
+    try {
+      await deleteExpense(id);
+      setPlainExpenses((prev) => prev.filter((e) => e.id !== id));
+      setInstallmentExpenses((prev) => prev.filter((e) => e.id !== id));
+    } catch (err) {
+      console.error(err);
+      setRowError({ id, message: 'No se pudo eliminar. Intentá de nuevo.' });
+      throw err;
+    }
   };
 
   if (authLoading || loading) {
@@ -136,6 +153,7 @@ export default function HistoryPage() {
                 category={cat}
                 showUsd={showUsd}
                 updatingId={updatingId}
+                errorMessage={rowError?.id === item.expense.id ? rowError.message : null}
                 onEdit={() => router.push(`/dashboard/expenses/${item.expense.id}/edit`)}
                 onDelete={() => handleDeleteExpense(item.expense.id)}
                 onSettle={() => markSettled(item.expense)}
@@ -145,8 +163,9 @@ export default function HistoryPage() {
 
           const { plan, installments } = item;
           const cat = categories.find((c) => c.id === plan.category_id);
-          const totalArs = installments.reduce((sum, e) => sum + e.amount_ars, 0);
-          const totalUsd = installments.reduce((sum, e) => sum + e.amount_usd, 0);
+          const totalArs = installments.reduce((sum, e) => sum + (e.amount_ars ?? 0), 0);
+          const totalUsd = installments.reduce((sum, e) => sum + (e.amount_usd ?? 0), 0);
+          const hasPendingInstallment = installments.some((e) => e.exchange_rate_used == null);
           const isExpanded = expandedPlanId === plan.id;
 
           return (
@@ -157,23 +176,27 @@ export default function HistoryPage() {
               >
                 {cat && (
                   <div
-                    className="w-9 h-9 rounded-full flex items-center justify-center text-lg flex-shrink-0"
+                    className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
                     style={{ backgroundColor: cat.color }}
                   >
-                    {cat.icon}
+                    <Emoji emoji={cat.icon} size={16} />
                   </div>
                 )}
                 <div className="flex-1 min-w-0">
                   <p className="text-white text-sm font-medium truncate">{plan.description}</p>
-                  <p className="text-slate-500 text-xs mt-0.5">
-                    🔁 En {plan.num_installments} cuotas
+                  <p className="text-slate-500 text-xs mt-0.5 inline-flex items-center gap-1">
+                    <Repeat size={12} /> En {plan.num_installments} cuotas
                     {cat ? ` · ${cat.name}` : ''}
                   </p>
                 </div>
                 <p className="text-white text-sm font-semibold whitespace-nowrap">
-                  {formatMoney(pickAmount(totalArs, totalUsd, showUsd), showUsd)}
+                  {hasPendingInstallment
+                    ? 'Cotización pendiente'
+                    : formatMoney(pickAmount(totalArs, totalUsd, showUsd), showUsd)}
                 </p>
-                <span className="text-slate-500 text-xs flex-shrink-0">{isExpanded ? '▲' : '▼'}</span>
+                <span className="text-slate-500 flex-shrink-0">
+                  {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                </span>
               </button>
 
               {isExpanded && (
@@ -185,6 +208,7 @@ export default function HistoryPage() {
                       category={cat}
                       showUsd={showUsd}
                       updatingId={updatingId}
+                      errorMessage={rowError?.id === exp.id ? rowError.message : null}
                       onEdit={() => router.push(`/dashboard/expenses/${exp.id}/edit`)}
                       onDelete={() => handleDeleteExpense(exp.id)}
                       onSettle={() => markSettled(exp)}
@@ -216,6 +240,7 @@ interface ExpenseRowProps {
   category?: Category;
   showUsd: boolean;
   updatingId: string | null;
+  errorMessage?: string | null;
   onEdit: () => void;
   onDelete: () => Promise<void>;
   onSettle: () => void;
@@ -226,22 +251,22 @@ function ExpenseRow({
   category,
   showUsd,
   updatingId,
+  errorMessage,
   onEdit,
   onDelete,
   onSettle,
 }: ExpenseRowProps) {
-  const share = partnerShareInArsUsd(expense);
-  const shareAmount = pickAmount(share.ars, share.usd, showUsd);
+  const isPending = expense.exchange_rate_used == null;
 
   return (
     <div className="bg-slate-800/60 rounded-xl px-4 py-3 flex flex-col gap-2">
       <div className="flex items-center gap-3">
         {category && (
           <div
-            className="w-9 h-9 rounded-full flex items-center justify-center text-lg flex-shrink-0"
+            className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
             style={{ backgroundColor: category.color }}
           >
-            {category.icon}
+            <Emoji emoji={category.icon} size={16} />
           </div>
         )}
         <div className="flex-1 min-w-0">
@@ -252,7 +277,7 @@ function ExpenseRow({
           </p>
         </div>
         <p className="text-white text-sm font-semibold whitespace-nowrap">
-          {formatMoney(pickAmount(expense.amount_ars, expense.amount_usd, showUsd), showUsd)}
+          {formatExpenseAmount(expense, showUsd)}
         </p>
         <ExpenseRowMenu label={expense.description} onEdit={onEdit} onDelete={onDelete} />
       </div>
@@ -262,16 +287,18 @@ function ExpenseRow({
           <div>
             <p className="text-xs text-slate-400">
               {expense.is_settled ? 'Te devolvieron ' : 'Te deben '}
-              {formatMoney(shareAmount, showUsd)}
+              {formatPartnerShare(expense, showUsd)}
             </p>
             {expense.shared_with && (
               <p className="text-xs text-slate-500 mt-0.5">{expense.shared_with}</p>
             )}
+            {errorMessage && <p className="text-xs text-red-400 mt-0.5">{errorMessage}</p>}
           </div>
           {!expense.is_settled && (
             <button
               onClick={onSettle}
-              disabled={updatingId === expense.id}
+              disabled={updatingId === expense.id || isPending}
+              title={isPending ? 'Esperá a que se resuelva la cotización pendiente' : undefined}
               className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 disabled:opacity-50"
             >
               {updatingId === expense.id ? 'Guardando...' : 'Marcar como pagado'}
@@ -281,7 +308,10 @@ function ExpenseRow({
       )}
 
       {expense.split_type === 'invited' && (
-        <p className="text-xs text-slate-500">Invitaste {formatMoney(shareAmount, showUsd)}</p>
+        <p className="text-xs text-slate-500">Invitaste {formatPartnerShare(expense, showUsd)}</p>
+      )}
+      {errorMessage && expense.split_type !== 'shared' && (
+        <p className="text-xs text-red-400">{errorMessage}</p>
       )}
     </div>
   );

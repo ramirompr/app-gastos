@@ -9,6 +9,8 @@ import { format, isBefore, startOfDay, subDays } from 'date-fns';
  */
 export async function getExchangeRate(date: Date = new Date()): Promise<number> {
   const dateStr = format(date, 'yyyy-MM-dd');
+  const today = startOfDay(new Date());
+  const isFuture = isBefore(today, startOfDay(date));
 
   const { data: cached } = await supabase
     .from('exchange_rates')
@@ -20,16 +22,42 @@ export async function getExchangeRate(date: Date = new Date()): Promise<number> 
     return cached.usd_to_ars;
   }
 
-  const isPast = isBefore(startOfDay(date), startOfDay(new Date()));
+  const isPast = isBefore(startOfDay(date), today);
   const rate = isPast ? await fetchHistoricalRate(date) : await fetchCurrentRate();
 
-  await supabase.from('exchange_rates').insert({
-    date: dateStr,
-    usd_to_ars: rate,
-    fetched_at: new Date().toISOString(),
-  });
+  // Las fechas futuras (ej. cuotas de meses que todavía no llegaron) usan la
+  // cotización de hoy como estimación, pero no se cachean bajo esa fecha:
+  // si no lo hiciéramos así, cuando ese día llegue de verdad, cualquier otro
+  // gasto cargado ese día heredaría silenciosamente esta cotización vieja en
+  // vez de ir a buscar la real.
+  if (!isFuture) {
+    await supabase.from('exchange_rates').insert({
+      date: dateStr,
+      usd_to_ars: rate,
+      fetched_at: new Date().toISOString(),
+    });
+  }
 
   return rate;
+}
+
+/**
+ * Igual que calculateAmountsInBothCurrencies, pero nunca lanza: si falla la
+ * consulta de cotización (API caída, etc.), devuelve todo en null para que
+ * el gasto se pueda guardar igual con la dolarización pendiente y resolverse
+ * más adelante (ver lib/expenses.ts: resolvePendingExchangeRates).
+ */
+export async function tryCalculateAmountsInBothCurrencies(
+  amount: number,
+  currency: 'ARS' | 'USD',
+  date: Date = new Date()
+): Promise<{ amount_ars: number | null; amount_usd: number | null; exchange_rate_used: number | null }> {
+  try {
+    return await calculateAmountsInBothCurrencies(amount, currency, date);
+  } catch (err) {
+    console.error('No se pudo obtener la cotización, queda pendiente:', err);
+    return { amount_ars: null, amount_usd: null, exchange_rate_used: null };
+  }
 }
 
 /**

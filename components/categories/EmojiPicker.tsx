@@ -1,5 +1,8 @@
 'use client';
 
+import { Emoji } from '@/components/ui/Emoji';
+import { X } from 'lucide-react';
+
 const EMOJI_GROUPS = [
   {
     label: 'Comida',
@@ -49,7 +52,7 @@ export function EmojiPicker({ onSelect, onClose }: EmojiPickerProps) {
           onClick={onClose}
           className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
         >
-          ✕
+          <X size={20} />
         </button>
       </div>
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
@@ -63,9 +66,9 @@ export function EmojiPicker({ onSelect, onClose }: EmojiPickerProps) {
                 <button
                   key={emoji}
                   onClick={() => onSelect(emoji)}
-                  className="w-10 h-10 flex items-center justify-center text-2xl rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-90 transition-all"
+                  className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-90 transition-all"
                 >
-                  {emoji}
+                  <Emoji emoji={emoji} size={24} />
                 </button>
               ))}
             </div>
