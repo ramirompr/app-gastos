@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { Category, RecurringExpense } from '@/lib/types';
-import { FREQUENCY_OPTIONS } from '@/lib/recurring';
+import { FREQUENCY_OPTIONS, currentMonthKey } from '@/lib/recurring';
 import { invalidateAppData } from '@/lib/app-data';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { MoneyInput } from '@/components/ui/MoneyInput';
@@ -15,6 +15,8 @@ interface RecurringExpenseFormModalProps {
   categories: Category[];
   onClose: () => void;
   onSaved: (recurring: RecurringExpense) => void;
+  /** Se creó un recurrente nuevo y se marcó como ya pagado este mes (sin gasto asociado). */
+  onConfirmedThisMonth?: (recurringId: string) => void;
 }
 
 interface FieldErrors {
@@ -29,6 +31,7 @@ export function RecurringExpenseFormModal({
   categories,
   onClose,
   onSaved,
+  onConfirmedThisMonth,
 }: RecurringExpenseFormModalProps) {
   const { user } = useAuth();
   const isEdit = !!recurring;
@@ -40,6 +43,7 @@ export function RecurringExpenseFormModal({
   const [subcategoryPicker, setSubcategoryPicker] = useState<Category | null>(null);
   const [dayOfMonth, setDayOfMonth] = useState(recurring ? String(recurring.day_of_month) : '1');
   const [frequencyMonths, setFrequencyMonths] = useState(recurring?.frequency_months ?? 1);
+  const [alreadyPaidThisMonth, setAlreadyPaidThisMonth] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
@@ -114,6 +118,16 @@ export function RecurringExpenseFormModal({
           .single();
         if (dbError) throw dbError;
         data = created;
+
+        if (alreadyPaidThisMonth) {
+          const { error: confirmError } = await supabase.from('recurring_confirmations').insert({
+            user_id: user!.id,
+            recurring_expense_id: created.id,
+            month: currentMonthKey(),
+          });
+          if (confirmError) throw confirmError;
+          onConfirmedThisMonth?.(created.id);
+        }
       }
 
       invalidateAppData();
@@ -279,6 +293,40 @@ export function RecurringExpenseFormModal({
             ))}
           </div>
         </div>
+
+        {!isEdit && (
+          <div>
+            <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold mb-2">
+              ¿Ya pagaste esto este mes?
+            </p>
+            <div className="flex gap-2 bg-slate-800/60 rounded-xl p-1">
+              <button
+                type="button"
+                onClick={() => setAlreadyPaidThisMonth(false)}
+                className={`flex-1 py-2 rounded-lg text-sm font-semibold transition ${
+                  !alreadyPaidThisMonth ? 'bg-violet-600 text-white' : 'text-slate-400'
+                }`}
+              >
+                No todavía
+              </button>
+              <button
+                type="button"
+                onClick={() => setAlreadyPaidThisMonth(true)}
+                className={`flex-1 py-2 rounded-lg text-sm font-semibold transition ${
+                  alreadyPaidThisMonth ? 'bg-violet-600 text-white' : 'text-slate-400'
+                }`}
+              >
+                Sí, ya lo pagué
+              </button>
+            </div>
+            {alreadyPaidThisMonth && (
+              <p className="text-slate-500 text-xs mt-2">
+                Va a quedar marcado como pagado este mes sin sumar ningún gasto. Los próximos meses se
+                pagan desde la pantalla de recurrentes.
+              </p>
+            )}
+          </div>
+        )}
 
         {error && <p className="text-red-400 text-sm">{error}</p>}
 

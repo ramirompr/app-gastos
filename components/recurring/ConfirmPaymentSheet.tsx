@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { Expense, RecurringExpense } from '@/lib/types';
 import { tryCalculateAmountsInBothCurrencies } from '@/lib/exchange-rates';
+import { currentMonthKey } from '@/lib/recurring';
 import { invalidateAppData } from '@/lib/app-data';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { MoneyInput } from '@/components/ui/MoneyInput';
@@ -14,6 +15,8 @@ interface ConfirmPaymentSheetProps {
   recurring: RecurringExpense;
   onClose: () => void;
   onPaid: (expense: Expense) => void;
+  /** Se marcó como pagado este mes sin crear ningún gasto. */
+  onMarkedPaidWithoutExpense: () => void;
 }
 
 /**
@@ -22,22 +25,18 @@ interface ConfirmPaymentSheetProps {
  * estipulado de cobro. Compartido entre la pantalla de recurrentes y el
  * resumen del dashboard.
  */
-export function ConfirmPaymentSheet({ recurring, onClose, onPaid }: ConfirmPaymentSheetProps) {
+export function ConfirmPaymentSheet({ recurring, onClose, onPaid, onMarkedPaidWithoutExpense }: ConfirmPaymentSheetProps) {
   const { user } = useAuth();
   const [amount, setAmount] = useState(String(recurring.default_amount));
-  const [alreadyLoaded, setAlreadyLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [marking, setMarking] = useState(false);
   const [error, setError] = useState('');
 
   const handlePay = async () => {
     if (!user) return;
     setError('');
-    // Si ya se cargó este gasto por otro lado este mes (ej. como gasto
-    // suelto), no lo sumamos de nuevo al total: guardamos el pago en $0 para
-    // que quede marcado como "pagado" (sin doble contar) y no siga apareciendo
-    // como pendiente/vencido.
-    const parsedAmount = alreadyLoaded ? 0 : parseFloat(amount) || 0;
-    if (!alreadyLoaded && parsedAmount <= 0) {
+    const parsedAmount = parseFloat(amount) || 0;
+    if (parsedAmount <= 0) {
       setError('Ingresá un monto válido');
       return;
     }
@@ -57,7 +56,7 @@ export function ConfirmPaymentSheet({ recurring, onClose, onPaid }: ConfirmPayme
         .insert({
           user_id: user.id,
           category_id: recurring.category_id,
-          description: alreadyLoaded ? `${recurring.description} (ya cargado aparte)` : recurring.description,
+          description: recurring.description,
           amount: parsedAmount,
           currency: recurring.currency,
           amount_ars,
@@ -81,58 +80,46 @@ export function ConfirmPaymentSheet({ recurring, onClose, onPaid }: ConfirmPayme
     }
   };
 
+  // Marca el mes como pagado sin crear ningún gasto (ej. porque ya se cargó
+  // por otro lado, o simplemente no se quiere trackear el monto).
+  const handleMarkPaid = async () => {
+    if (!user) return;
+    setError('');
+    setMarking(true);
+    try {
+      const { error: dbError } = await supabase.from('recurring_confirmations').insert({
+        user_id: user.id,
+        recurring_expense_id: recurring.id,
+        month: currentMonthKey(),
+      });
+      if (dbError) throw dbError;
+
+      invalidateAppData();
+      onMarkedPaidWithoutExpense();
+    } catch (err) {
+      console.error(err);
+      setError('Error al guardar. Intentá de nuevo.');
+    } finally {
+      setMarking(false);
+    }
+  };
+
   return (
     <BottomSheet onClose={onClose}>
       <div className="flex flex-col gap-4">
         <p className="text-white font-semibold text-lg">Pagar &quot;{recurring.description}&quot;</p>
-
-        <div>
-          <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold mb-2">
-            ¿Ya cargaste este gasto este mes?
-          </p>
-          <div className="flex gap-2 bg-slate-800/60 rounded-xl p-1">
-            <button
-              type="button"
-              onClick={() => setAlreadyLoaded(false)}
-              className={`flex-1 py-2 rounded-lg text-sm font-semibold transition ${
-                !alreadyLoaded ? 'bg-violet-600 text-white' : 'text-slate-400'
-              }`}
-            >
-              No, cargarlo ahora
-            </button>
-            <button
-              type="button"
-              onClick={() => setAlreadyLoaded(true)}
-              className={`flex-1 py-2 rounded-lg text-sm font-semibold transition ${
-                alreadyLoaded ? 'bg-violet-600 text-white' : 'text-slate-400'
-              }`}
-            >
-              Sí, ya lo cargué
-            </button>
-          </div>
+        <p className="text-slate-400 text-sm -mt-2">
+          ¿Confirmás que el monto de este mes es este? Podés editarlo antes de pagar.
+        </p>
+        <div className="flex items-center gap-3">
+          <MoneyInput
+            value={amount}
+            onChange={setAmount}
+            className="flex-1 px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white focus:border-violet-500 focus:outline-none transition text-lg font-semibold"
+            autoFocus
+          />
+          <span className="text-emerald-400 font-semibold">{recurring.currency}</span>
         </div>
-
-        {alreadyLoaded ? (
-          <p className="text-slate-400 text-sm">
-            No lo vamos a sumar de nuevo al total del mes — solo se marca como pagado para que deje de
-            figurar como pendiente.
-          </p>
-        ) : (
-          <>
-            <p className="text-slate-400 text-sm -mt-2">
-              ¿Confirmás que el monto de este mes es este? Podés editarlo antes de pagar.
-            </p>
-            <div className="flex items-center gap-3">
-              <MoneyInput
-                value={amount}
-                onChange={setAmount}
-                className="flex-1 px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white focus:border-violet-500 focus:outline-none transition text-lg font-semibold"
-                autoFocus
-              />
-              <span className="text-emerald-400 font-semibold">{recurring.currency}</span>
-            </div>
-          </>
-        )}
 
         {error && <p className="text-red-400 text-sm">{error}</p>}
         <div className="flex gap-3">
@@ -144,12 +131,20 @@ export function ConfirmPaymentSheet({ recurring, onClose, onPaid }: ConfirmPayme
           </button>
           <button
             onClick={handlePay}
-            disabled={saving}
+            disabled={saving || marking}
             className="flex-1 py-4 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-semibold rounded-xl transition"
           >
-            {saving ? 'Guardando...' : alreadyLoaded ? 'Marcar como pagado' : 'Pagar'}
+            {saving ? 'Guardando...' : 'Pagar'}
           </button>
         </div>
+
+        <button
+          onClick={handleMarkPaid}
+          disabled={saving || marking}
+          className="text-sm font-semibold text-slate-400 hover:text-slate-300 disabled:opacity-50 -mt-1"
+        >
+          {marking ? 'Guardando...' : 'Marcar como pagada, sin sumar ningún gasto'}
+        </button>
       </div>
     </BottomSheet>
   );

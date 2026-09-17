@@ -4,12 +4,12 @@ import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
-import { Expense, RecurringExpense } from '@/lib/types';
+import { Expense, RecurringConfirmation, RecurringExpense } from '@/lib/types';
 import { getTopLevelCategory } from '@/lib/categories';
 import { Emoji } from '@/components/ui/Emoji';
 import { MoreVertical, Pencil, Trash2 } from 'lucide-react';
 import { convertWithRate } from '@/lib/exchange-rates';
-import { isRecurringDueInMonth, monthsUntilNextDue, frequencyLabel } from '@/lib/recurring';
+import { isRecurringDueInMonth, monthsUntilNextDue, frequencyLabel, currentMonthKey } from '@/lib/recurring';
 import { useCurrencyDisplay } from '@/lib/currency-display-context';
 import { formatMoney } from '@/lib/format-money';
 import {
@@ -55,6 +55,9 @@ export default function RecurringExpensesPage() {
   // visita a esta pantalla).
   const [localRecurrings, setLocalRecurrings] = useState<RecurringExpense[] | null>(null);
   const [localConfirmed, setLocalConfirmed] = useState<Expense[] | null>(null);
+  const [localConfirmedWithoutExpense, setLocalConfirmedWithoutExpense] = useState<RecurringConfirmation[] | null>(
+    null
+  );
 
   useEffect(() => {
     if (!authLoading && !user) router.push('/login');
@@ -74,6 +77,7 @@ export default function RecurringExpensesPage() {
   );
   const recurrings = localRecurrings ?? cachedRecurring?.recurrings ?? [];
   const confirmedThisMonth = localConfirmed ?? cachedRecurring?.confirmedThisMonth ?? [];
+  const confirmedWithoutExpense = localConfirmedWithoutExpense ?? cachedRecurring?.confirmedWithoutExpense ?? [];
   const todayRate = cachedRecurring?.rate ?? null;
   const loading = loadingCategories || loadingRecurring;
 
@@ -85,7 +89,10 @@ export default function RecurringExpensesPage() {
       const confirmedExpense = dueThisMonth
         ? confirmedThisMonth.find((e) => e.recurring_expense_id === r.id) ?? null
         : null;
-      const isPaid = !!confirmedExpense;
+      const confirmedNoExpense = dueThisMonth
+        ? confirmedWithoutExpense.some((c) => c.recurring_expense_id === r.id)
+        : false;
+      const isPaid = !!confirmedExpense || confirmedNoExpense;
       const isOverdue = dueThisMonth && !isPaid && r.day_of_month <= currentDay;
       return { recurring: r, confirmedExpense, isPaid, isOverdue, dueThisMonth };
     });
@@ -98,7 +105,7 @@ export default function RecurringExpensesPage() {
       const rankDiff = statusRank(a) - statusRank(b);
       return rankDiff !== 0 ? rankDiff : a.recurring.day_of_month - b.recurring.day_of_month;
     });
-  }, [recurrings, confirmedThisMonth]);
+  }, [recurrings, confirmedThisMonth, confirmedWithoutExpense]);
 
   const handleSaved = (saved: RecurringExpense) => {
     setLocalRecurrings((prev) => {
@@ -199,7 +206,7 @@ export default function RecurringExpensesPage() {
                         format(addMonths(new Date(), monthsUntilNextDue(recurring)), 'MMMM', { locale: es })
                       )}`
                     : isPaid
-                    ? confirmedExpense?.exchange_rate_used == null
+                    ? confirmedExpense && confirmedExpense.exchange_rate_used == null
                       ? 'Pagado (cotización pendiente)'
                       : 'Pagado'
                     : isOverdue
@@ -251,6 +258,18 @@ export default function RecurringExpensesPage() {
             setEditingRecurring(null);
           }}
           onSaved={handleSaved}
+          onConfirmedThisMonth={(recurringId) => {
+            setLocalConfirmedWithoutExpense((prev) => [
+              ...(prev ?? cachedRecurring?.confirmedWithoutExpense ?? []),
+              {
+                id: `local-${recurringId}`,
+                user_id: user!.id,
+                recurring_expense_id: recurringId,
+                month: currentMonthKey(),
+                created_at: new Date().toISOString(),
+              },
+            ]);
+          }}
         />
       )}
 
@@ -261,6 +280,19 @@ export default function RecurringExpensesPage() {
           onClose={() => setPayingRecurring(null)}
           onPaid={(created) => {
             setLocalConfirmed((prev) => [...(prev ?? cachedRecurring?.confirmedThisMonth ?? []), created]);
+            setPayingRecurring(null);
+          }}
+          onMarkedPaidWithoutExpense={() => {
+            setLocalConfirmedWithoutExpense((prev) => [
+              ...(prev ?? cachedRecurring?.confirmedWithoutExpense ?? []),
+              {
+                id: `local-${payingRecurring.id}`,
+                user_id: user!.id,
+                recurring_expense_id: payingRecurring.id,
+                month: currentMonthKey(),
+                created_at: new Date().toISOString(),
+              },
+            ]);
             setPayingRecurring(null);
           }}
         />

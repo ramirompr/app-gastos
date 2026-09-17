@@ -177,6 +177,29 @@ export type Database = {
           created_at?: string;
         };
       };
+      recurring_confirmations: {
+        Row: {
+          id: string;
+          user_id: string;
+          recurring_expense_id: string;
+          month: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          recurring_expense_id: string;
+          month: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          recurring_expense_id?: string;
+          month?: string;
+          created_at?: string;
+        };
+      };
       exchange_rates: {
         Row: {
           id: string;
@@ -209,3 +232,4 @@ export type Expense = Database['public']['Tables']['expenses']['Row'];
 export type ExchangeRate = Database['public']['Tables']['exchange_rates']['Row'];
 export type ExpenseInstallmentPlan = Database['public']['Tables']['expense_installment_plans']['Row'];
 export type RecurringExpense = Database['public']['Tables']['recurring_expenses']['Row'];
+export type RecurringConfirmation = Database['public']['Tables']['recurring_confirmations']['Row'];

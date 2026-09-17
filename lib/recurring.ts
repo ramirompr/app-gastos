@@ -1,4 +1,10 @@
 import { RecurringExpense } from './types';
+import { format, startOfMonth } from 'date-fns';
+
+/** "2026-09-01" — clave de mes usada en recurring_confirmations.month. */
+export function currentMonthKey(date: Date = new Date()): string {
+  return format(startOfMonth(date), 'yyyy-MM-dd');
+}
 
 export const FREQUENCY_OPTIONS: { months: number; label: string }[] = [
   { months: 1, label: 'Mensual' },

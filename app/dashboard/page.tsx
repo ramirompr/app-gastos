@@ -144,7 +144,10 @@ export default function DashboardPage() {
 
   const recurringStatuses = useMemo<RecurringStatus[]>(() => {
     if (!recurringData) return [];
-    const confirmedIds = new Set(recurringData.confirmedThisMonth.map((e) => e.recurring_expense_id));
+    const confirmedIds = new Set([
+      ...recurringData.confirmedThisMonth.map((e) => e.recurring_expense_id),
+      ...recurringData.confirmedWithoutExpense.map((c) => c.recurring_expense_id),
+    ]);
     const currentDay = new Date().getDate();
     return recurringData.recurrings
       .filter((r) => isRecurringDueInMonth(r) && !confirmedIds.has(r.id))
@@ -420,6 +423,10 @@ export default function DashboardPage() {
           recurring={payingRecurring}
           onClose={() => setPayingRecurring(null)}
           onPaid={() => {
+            setPayingRecurring(null);
+            setRefreshTick((t) => t + 1);
+          }}
+          onMarkedPaidWithoutExpense={() => {
             setPayingRecurring(null);
             setRefreshTick((t) => t + 1);
           }}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from './supabase';
-import { Category, Expense, ExpenseInstallmentPlan, RecurringExpense } from './types';
+import { Category, Expense, ExpenseInstallmentPlan, RecurringConfirmation, RecurringExpense } from './types';
 import { fetchUserCategories } from './categories';
 import { getExchangeRate } from './exchange-rates';
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
@@ -32,6 +32,8 @@ function emptySlot<T>(): Slot<T> {
 export interface RecurringData {
   recurrings: RecurringExpense[];
   confirmedThisMonth: Expense[];
+  /** Recurrentes marcados "pagado" este mes sin crear un gasto (ver recurring_confirmations). */
+  confirmedWithoutExpense: RecurringConfirmation[];
   rate: number | null;
 }
 
@@ -236,7 +238,7 @@ export function getRecurringCached(userId: string): Promise<RecurringData> {
     async () => {
       const monthStart = format(startOfMonth(new Date()), 'yyyy-MM-dd');
       const monthEnd = format(endOfMonth(new Date()), 'yyyy-MM-dd');
-      const [{ data: recs }, { data: confirmed }, rate] = await Promise.all([
+      const [{ data: recs }, { data: confirmed }, { data: confirmedNoExpense }, rate] = await Promise.all([
         supabase
           .from('recurring_expenses')
           .select('*')
@@ -250,9 +252,19 @@ export function getRecurringCached(userId: string): Promise<RecurringData> {
           .not('recurring_expense_id', 'is', null)
           .gte('date', monthStart)
           .lte('date', monthEnd),
+        supabase
+          .from('recurring_confirmations')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('month', monthStart),
         getExchangeRate(new Date()).catch(() => null),
       ]);
-      return { recurrings: recs ?? [], confirmedThisMonth: confirmed ?? [], rate };
+      return {
+        recurrings: recs ?? [],
+        confirmedThisMonth: confirmed ?? [],
+        confirmedWithoutExpense: confirmedNoExpense ?? [],
+        rate,
+      };
     }
   );
 }
