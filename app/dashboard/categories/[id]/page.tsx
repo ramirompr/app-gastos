@@ -12,6 +12,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { PlusIcon } from '@/components/icons/PlusIcon';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Emoji } from '@/components/ui/Emoji';
+import { Container } from '@/components/layout/Container';
 import { MoreVertical, Pencil, Trash2, FolderOpen } from 'lucide-react';
 
 type ActionSheet =
@@ -103,7 +104,7 @@ export default function SubcategoriesPage() {
         onBack={() => router.push('/dashboard/categories')}
         onMenu={() => setMenuOpen(true)}
       />
-      <div className="px-4 pb-4">
+      <Container className="pb-4">
         {/* Parent category info */}
         <div className="flex items-center gap-4 justify-center">
           <div
@@ -120,9 +121,9 @@ export default function SubcategoriesPage() {
             </p>
           </div>
         </div>
-      </div>
+      </Container>
 
-      <div className="px-4">
+      <Container>
         {subcategories.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <FolderOpen size={56} strokeWidth={1.25} className="text-slate-700 mb-4" />
@@ -130,7 +131,7 @@ export default function SubcategoriesPage() {
             <p className="text-slate-600 text-sm">Tocá el + para agregar una</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
             {subcategories.map((cat) => (
               <div
                 key={cat.id}
@@ -157,7 +158,7 @@ export default function SubcategoriesPage() {
             ))}
           </div>
         )}
-      </div>
+      </Container>
 
       {/* FAB */}
       <button

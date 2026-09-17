@@ -20,6 +20,7 @@ import { StackedBarChart, MonthBar } from '@/components/analysis/StackedBarChart
 import { MiniProportionBar } from '@/components/analysis/MiniProportionBar';
 import { AppMenu } from '@/components/layout/AppMenu';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { Container } from '@/components/layout/Container';
 import { SkeletonBlock, SkeletonList } from '@/components/ui/Skeleton';
 import { format, startOfMonth, endOfMonth, subMonths, isSameMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -35,6 +36,8 @@ interface MonthlyDetailRow {
 
 interface MonthlyDetail {
   label: string;
+  start: string;
+  end: string;
   rows: MonthlyDetailRow[];
 }
 
@@ -104,13 +107,16 @@ export default function AnalysisPage() {
         });
       }
 
+      // Cada barra ordena sus propias categorías (no el orden global) para que
+      // la de mayor gasto de ese mes quede arriba de la pila.
       const segments = orderedCategoryIds
         .filter((id) => monthTotals.has(id))
         .map((id) => {
           const t = monthTotals.get(id)!;
           return { color: categories.find((c) => c.id === id)!.color, value: pickAmount(t.ars, t.usd, showUsd) };
         })
-        .filter((s) => s.value > 0);
+        .filter((s) => s.value > 0)
+        .sort((a, b) => b.value - a.value);
 
       const total = segments.reduce((sum, s) => sum + s.value, 0);
 
@@ -134,6 +140,8 @@ export default function AnalysisPage() {
 
       monthlyDetail.push({
         label: capitalize(format(monthDate, 'MMMM yyyy', { locale: es })),
+        start: monthStart,
+        end: monthEnd,
         rows,
       });
     }
@@ -167,7 +175,7 @@ export default function AnalysisPage() {
     <div className="min-h-screen bg-slate-950 pb-16">
       <PageHeader title="Análisis" onBack={() => router.push('/dashboard')} onMenu={() => setMenuOpen(true)} />
 
-      <div className="px-4 flex flex-col gap-6">
+      <Container className="flex flex-col gap-6">
         <div className="flex gap-2 justify-center">
           {MONTH_OPTIONS.map((n) => (
             <button
@@ -233,7 +241,12 @@ export default function AnalysisPage() {
                           {month.rows.map((row) => (
                             <div
                               key={row.category.id}
-                              className="flex items-center gap-3 bg-slate-800/60 rounded-xl px-3 py-2"
+                              onClick={() =>
+                                router.push(
+                                  `/dashboard/expenses?categoryId=${row.category.id}&start=${month.start}&end=${month.end}`
+                                )
+                              }
+                              className="flex items-center gap-3 bg-slate-800/60 rounded-xl px-3 py-2 cursor-pointer hover:bg-slate-800 active:scale-[0.98] transition-all"
                             >
                               <div
                                 className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
@@ -259,7 +272,7 @@ export default function AnalysisPage() {
             )}
           </>
         )}
-      </div>
+      </Container>
 
       <AppMenu open={menuOpen} onClose={() => setMenuOpen(false)} />
     </div>

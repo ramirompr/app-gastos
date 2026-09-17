@@ -62,7 +62,7 @@ export function StackedBarChart({ months, axisMax, ticks, isUsd = false }: Stack
                   </p>
                 )}
                 <div
-                  className="w-full flex flex-col-reverse rounded overflow-hidden"
+                  className="w-full flex flex-col rounded overflow-hidden"
                   style={{ height: `${barHeight}px` }}
                 >
                   {m.segments.map((s, si) => (

@@ -11,6 +11,7 @@ import { AppMenu } from '@/components/layout/AppMenu';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PlusIcon } from '@/components/icons/PlusIcon';
 import { BottomSheet } from '@/components/ui/BottomSheet';
+import { Container } from '@/components/layout/Container';
 import { Emoji } from '@/components/ui/Emoji';
 import { SkeletonGrid } from '@/components/ui/Skeleton';
 import { MoreVertical, Pencil, Trash2, Tags } from 'lucide-react';
@@ -106,7 +107,7 @@ export default function CategoriesPage() {
         {loading ? '' : `${topLevel.length} ${topLevel.length === 1 ? 'categoría' : 'categorías'}`}
       </p>
 
-      <div className="px-4">
+      <Container>
         {loading ? (
           <SkeletonGrid />
         ) : topLevel.length === 0 ? (
@@ -116,7 +117,7 @@ export default function CategoriesPage() {
             <p className="text-slate-600 text-sm">Tocá el + para crear la primera</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
             {topLevel.map((cat) => {
               const subs = subCount(cat.id);
               return (
@@ -154,7 +155,7 @@ export default function CategoriesPage() {
             })}
           </div>
         )}
-      </div>
+      </Container>
 
       {/* FAB */}
       <button

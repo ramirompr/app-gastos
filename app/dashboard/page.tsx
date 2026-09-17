@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth-context';
 import { Expense, RecurringExpense } from '@/lib/types';
 import { getTopLevelCategory } from '@/lib/categories';
 import { Emoji } from '@/components/ui/Emoji';
+import { Container } from '@/components/layout/Container';
 import { useCurrencyDisplay } from '@/lib/currency-display-context';
 import { pickAmount, formatMoney } from '@/lib/format-money';
 import { resolvePendingExchangeRates } from '@/lib/expenses';
@@ -222,7 +223,7 @@ export default function DashboardPage() {
       <PageHeader title="Mis Gastos" onMenu={() => setMenuOpen(true)} />
 
       {/* Period tabs */}
-      <div className="px-4 flex gap-2 justify-center mb-4">
+      <Container className="flex gap-2 justify-center mb-4">
         {PERIOD_TABS.map((tab) => (
           <button
             key={tab.value}
@@ -248,11 +249,11 @@ export default function DashboardPage() {
         >
           Período
         </button>
-      </div>
+      </Container>
 
       {/* Period navigation */}
       {isCustomRange ? (
-        <div className="px-4 flex items-center gap-2 mb-6">
+        <Container className="flex items-center gap-2 mb-6">
           <input
             type="date"
             value={customStart}
@@ -266,10 +267,10 @@ export default function DashboardPage() {
             onChange={(e) => setCustomEnd(e.target.value)}
             className="flex-1 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm focus:border-violet-500 focus:outline-none"
           />
-        </div>
+        </Container>
       ) : (
         <div
-          className="relative flex items-center justify-between px-8 mb-6 h-10 select-none touch-pan-y"
+          className="relative flex items-center justify-between max-w-2xl mx-auto px-8 mb-6 h-10 select-none touch-pan-y"
           onPointerDown={handlePointerDown}
           onPointerUp={handlePointerUp}
         >
@@ -310,7 +311,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Category breakdown */}
-      <div className="px-4 flex flex-col gap-3">
+      <Container className="flex flex-col gap-3">
         {!hasLoadedOnce ? (
           <SkeletonList count={4} />
         ) : (
@@ -350,11 +351,11 @@ export default function DashboardPage() {
             ))}
           </>
         )}
-      </div>
+      </Container>
 
       {/* Gastos recurrentes de este mes, sin confirmar todavía */}
       {recurringStatuses.length > 0 && (
-        <div className="px-4 flex flex-col gap-3 mt-6">
+        <Container className="flex flex-col gap-3 mt-6">
           <p className="text-slate-500 text-xs uppercase tracking-wider font-semibold px-1">
             Recurrentes de este mes
           </p>
@@ -411,7 +412,7 @@ export default function DashboardPage() {
               </div>
             );
           })}
-        </div>
+        </Container>
       )}
 
       {payingRecurring && (

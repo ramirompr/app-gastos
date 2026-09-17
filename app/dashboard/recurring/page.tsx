@@ -24,6 +24,7 @@ import { RecurringExpenseFormModal } from '@/components/recurring/RecurringExpen
 import { ConfirmPaymentSheet } from '@/components/recurring/ConfirmPaymentSheet';
 import { AppMenu } from '@/components/layout/AppMenu';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { Container } from '@/components/layout/Container';
 import { PlusIcon } from '@/components/icons/PlusIcon';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { SkeletonList } from '@/components/ui/Skeleton';
@@ -145,7 +146,7 @@ export default function RecurringExpensesPage() {
         onMenu={() => setMenuOpen(true)}
       />
 
-      <div className="px-4 flex flex-col gap-3">
+      <Container className="flex flex-col gap-3">
         {loading && <SkeletonList count={4} />}
         {!loading && statuses.length === 0 && (
           <p className="text-center text-slate-500 text-sm py-16">
@@ -229,7 +230,7 @@ export default function RecurringExpensesPage() {
             </div>
           );
         })}
-      </div>
+      </Container>
 
       {/* FAB */}
       <button

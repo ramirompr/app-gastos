@@ -11,6 +11,7 @@ import { computeInstallments } from '@/lib/installments';
 import { CategoryFormModal } from '@/components/categories/CategoryFormModal';
 import { AppMenu } from '@/components/layout/AppMenu';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { Container } from '@/components/layout/Container';
 import { PlusIcon } from '@/components/icons/PlusIcon';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Emoji } from '@/components/ui/Emoji';
@@ -337,7 +338,7 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
         onMenu={() => setMenuOpen(true)}
       />
 
-      <div className="px-4 flex flex-col gap-8">
+      <Container className="flex flex-col gap-8">
         {/* Amount */}
         <div className="flex flex-col items-center py-4">
           {fieldErrors.amount && (
@@ -620,17 +621,19 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
         </div>
 
         {error && <p className="text-red-400 text-sm">{error}</p>}
-      </div>
+      </Container>
 
       {/* Submit */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-slate-950 border-t border-slate-800">
-        <button
-          onClick={handleSubmit}
-          disabled={saving}
-          className="w-full py-4 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-semibold rounded-xl transition"
-        >
-          {saving ? 'Guardando...' : isEdit ? 'Guardar cambios' : 'Guardar gasto'}
-        </button>
+        <Container>
+          <button
+            onClick={handleSubmit}
+            disabled={saving}
+            className="w-full py-4 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-semibold rounded-xl transition"
+          >
+            {saving ? 'Guardando...' : isEdit ? 'Guardar cambios' : 'Guardar gasto'}
+          </button>
+        </Container>
       </div>
 
       {/* Subcategory picker */}

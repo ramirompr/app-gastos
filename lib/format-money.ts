@@ -15,7 +15,7 @@ export function formatMoney(amount: number, showUsd: boolean): string {
       maximumFractionDigits: 2,
     })}`;
   }
-  return `${Math.round(amount).toLocaleString('es-AR')} $`;
+  return `$ ${Math.round(amount).toLocaleString('es-AR')}`;
 }
 
 /**

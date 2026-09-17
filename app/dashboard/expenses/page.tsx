@@ -10,6 +10,7 @@ import { useCurrencyDisplay } from '@/lib/currency-display-context';
 import { pickAmount, formatMoney, formatExpenseAmount, formatPartnerShare, partnerShareInArsUsd } from '@/lib/format-money';
 import { AppMenu } from '@/components/layout/AppMenu';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { Container } from '@/components/layout/Container';
 import { ExpenseRowMenu } from '@/components/expenses/ExpenseRowMenu';
 import { Emoji } from '@/components/ui/Emoji';
 import { MiniProportionBar } from '@/components/analysis/MiniProportionBar';
@@ -146,7 +147,7 @@ function ExpensesListContent() {
   return (
     <div className="min-h-screen bg-slate-950 pb-16">
       <PageHeader title="Gastos" onBack={() => router.push('/dashboard')} onMenu={() => setMenuOpen(true)} />
-      <div className="px-4 pb-4">
+      <Container className="pb-4">
         <div className="flex items-center gap-4 justify-center">
           <div
             className="w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg flex-shrink-0"
@@ -166,17 +167,17 @@ function ExpensesListContent() {
             )}
           </div>
         </div>
-      </div>
+      </Container>
 
       {hasSubcategories && groups.length > 0 && (
-        <div className="px-4 mb-2">
+        <Container className="mb-2">
           <MiniProportionBar
             segments={groups.map((g) => ({ color: g.category.color, value: g.amount }))}
           />
-        </div>
+        </Container>
       )}
 
-      <div className="px-4 flex flex-col gap-3">
+      <Container className="flex flex-col gap-3">
         {pendingCount > 0 && (
           <p className="text-amber-400 text-xs text-center bg-amber-400/10 rounded-lg px-3 py-2">
             {pendingCount} {pendingCount === 1 ? 'gasto' : 'gastos'} con cotización del dólar
@@ -240,7 +241,7 @@ function ExpensesListContent() {
                 onSettle={() => markSettled(exp)}
               />
             ))}
-      </div>
+      </Container>
 
       <AppMenu open={menuOpen} onClose={() => setMenuOpen(false)} />
     </div>

@@ -17,6 +17,7 @@ import {
 } from '@/lib/app-data';
 import { AppMenu } from '@/components/layout/AppMenu';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { Container } from '@/components/layout/Container';
 import { SkeletonList } from '@/components/ui/Skeleton';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -89,15 +90,15 @@ export default function PendingPaymentsPage() {
         onBack={() => router.push('/dashboard')}
         onMenu={() => setMenuOpen(true)}
       />
-      <div className="px-4 pb-4">
+      <Container className="pb-4">
         <p className="text-slate-500 text-sm text-center">
           {loading
             ? ''
             : `${expenses.length} ${expenses.length === 1 ? 'gasto' : 'gastos'} · Te deben ${formatMoney(totalOwed, showUsd)}`}
         </p>
-      </div>
+      </Container>
 
-      <div className="px-4 flex flex-col gap-3">
+      <Container className="flex flex-col gap-3">
         {loading && <SkeletonList count={3} />}
         {!loading && expenses.length === 0 && (
           <p className="text-center text-slate-500 text-sm py-16">
@@ -152,7 +153,7 @@ export default function PendingPaymentsPage() {
             </div>
           );
         })}
-      </div>
+      </Container>
 
       <AppMenu open={menuOpen} onClose={() => setMenuOpen(false)} />
     </div>

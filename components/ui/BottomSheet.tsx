@@ -36,14 +36,16 @@ export function BottomSheet({ onClose, children, panelClassName = '', stacked = 
         onClick={handleClose}
       />
       <div
-        className={`fixed bottom-0 left-0 right-0 ${stacked ? 'z-[70]' : 'z-50'} bg-slate-900 rounded-t-2xl border-t border-slate-800 transition-transform duration-300 ease-out ${
+        className={`fixed inset-x-0 bottom-0 sm:inset-x-auto sm:left-1/2 sm:bottom-8 sm:-translate-x-1/2 sm:w-full sm:max-w-lg ${
+          stacked ? 'z-[70]' : 'z-50'
+        } bg-slate-900 rounded-t-2xl sm:rounded-2xl border-t sm:border border-slate-800 sm:shadow-2xl transition-transform duration-300 ease-out ${
           visible ? 'translate-y-0' : 'translate-y-full'
         } ${panelClassName}`}
       >
-        <div className="flex justify-center pt-3 pb-1">
+        <div className="flex justify-center pt-3 pb-1 sm:hidden">
           <div className="w-10 h-1 bg-slate-700 rounded-full" />
         </div>
-        <div className="px-6 pt-3 pb-10">{children}</div>
+        <div className="px-6 pt-3 pb-10 sm:pt-6 sm:pb-8">{children}</div>
       </div>
     </>
   );

@@ -11,7 +11,7 @@ interface PageHeaderProps {
 
 export function PageHeader({ title, onBack, onMenu }: PageHeaderProps) {
   return (
-    <div className="relative flex items-center px-4 pt-6 pb-4 min-h-[3.5rem]">
+    <div className="relative flex items-center max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-4 min-h-[3.5rem]">
       {onBack && (
         <button
           onClick={onBack}

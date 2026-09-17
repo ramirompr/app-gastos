@@ -50,6 +50,67 @@ xl: 1280px (desktop grande)
 
 ---
 
+## 🖥️ Responsive — obligatorio en toda pantalla/componente nuevo
+
+Mobile-first define el diseño de base, pero **ninguna pantalla se da por
+terminada hasta que también se ve bien en tablet y desktop**. El error típico
+a evitar es que el contenido se estire de borde a borde en pantallas anchas
+(se ve "roto" en una notebook o monitor grande). La solución ya está
+resuelta a nivel de sistema — no hay que inventarla de nuevo en cada
+pantalla:
+
+### `Container` (`components/layout/Container.tsx`)
+Reemplaza cualquier `<div className="px-4 ...">` que envuelva el contenido
+principal de una pantalla. Centra el contenido con un ancho máximo
+(`max-w-2xl`, 672px) y padding responsive (`px-4 sm:px-6 lg:px-8`), así el
+contenido no se estira en pantallas anchas pero sigue ocupando el 100% en
+mobile.
+
+```tsx
+<Container className="flex flex-col gap-3">
+  {/* contenido de la pantalla */}
+</Container>
+```
+
+Usar un `Container` por cada sección/bloque de la pantalla (igual que antes
+se usaba un `<div className="px-4">` por bloque) — no hace falta un único
+wrapper gigante. `PageHeader` ya centra su contenido con el mismo ancho
+máximo automáticamente, así que el header queda alineado con el contenido de
+abajo sin hacer nada extra.
+
+**Excepciones:** elementos que ya tienen su propio ancho fijo y se centran
+solos (ej. `DonutChart`, un `flex justify-center`) no necesitan `Container`.
+Barras fijas al fondo de pantalla (`fixed bottom-0 left-0 right-0`, como el
+botón de guardar de `ExpenseForm`) sí necesitan un `Container` *adentro* de
+la barra para que el botón no se estire de punta a punta en desktop.
+
+### Grids con más aire en pantallas grandes
+Cuando una pantalla muestra una grilla de tarjetas (categorías,
+subcategorías), sumar un breakpoint más ancho es válido y barato:
+`grid-cols-2 sm:grid-cols-3 lg:grid-cols-4`. No hace falta para grillas dentro
+de un modal/BottomSheet, ya que ese panel tiene su propio ancho máximo.
+
+### Modales y action sheets (`BottomSheet`, `EmojiPicker`)
+En mobile siguen siendo hojas que se deslizan desde abajo, pero en `sm:` y
+mayor se comportan como un modal centrado (ancho máximo, bordes redondeados
+en las 4 esquinas, con backdrop alrededor) en vez de pegarse de borde a
+borde. Esto ya está resuelto en el componente compartido `BottomSheet` — no
+hay que reimplementar overlays a mano; si un componente necesita un overlay
+propio (como `EmojiPicker`), replicar el mismo patrón (`sm:items-center
+sm:justify-center sm:bg-black/60 sm:p-4` en el overlay + `sm:max-w-lg
+sm:rounded-2xl` en el panel).
+
+### Checklist responsive antes de dar por terminada una pantalla
+- [ ] El contenido usa `Container` (o una excepción justificada) en vez de
+      `px-4` suelto
+- [ ] Se ve bien en 375px, 768px y 1280px+ (sin franjas de contenido
+      estirado de borde a borde en desktop)
+- [ ] Cualquier barra/botón `fixed` al viewport está envuelto en `Container`
+- [ ] Modales/action sheets nuevos siguen el patrón de `BottomSheet`
+      (mobile: hoja inferior: `sm:` y mayor: modal centrado)
+
+---
+
 ## 🎯 Componentes Base
 
 ### Botones
@@ -178,7 +239,8 @@ En `app/globals.css`:
 
 Al crear nuevas páginas/componentes, verificar:
 - [ ] Mobile-first (375px primero)
-- [ ] Responsive (testeado en 375, 768, 1024px)
+- [ ] Responsive (testeado en 375, 768, 1024px) — ver checklist detallado en
+      "🖥️ Responsive" más arriba (`Container`, grids, modales)
 - [ ] Colores de la paleta
 - [ ] Tipografía consistente
 - [ ] Spacing uniforme
@@ -197,4 +259,4 @@ Al crear nuevas páginas/componentes, verificar:
 
 ---
 
-**Última actualización**: Septiembre 12, 2026
+**Última actualización**: Septiembre 17, 2026
