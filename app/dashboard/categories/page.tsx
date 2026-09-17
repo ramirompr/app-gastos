@@ -1,16 +1,18 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { Category } from '@/lib/types';
+import { peekCategories, getCategoriesCached, useCachedResource, invalidateAppData } from '@/lib/app-data';
 import { CategoryFormModal } from '@/components/categories/CategoryFormModal';
 import { AppMenu } from '@/components/layout/AppMenu';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PlusIcon } from '@/components/icons/PlusIcon';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Emoji } from '@/components/ui/Emoji';
+import { SkeletonGrid } from '@/components/ui/Skeleton';
 import { MoreVertical, Pencil, Trash2, Tags } from 'lucide-react';
 
 type ActionSheet =
@@ -20,42 +22,38 @@ type ActionSheet =
 export default function CategoriesPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const [allCategories, setAllCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [actionSheet, setActionSheet] = useState<ActionSheet | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
+  // Ediciones optimistas locales (crear/editar/borrar) que todavía no se
+  // reflejan en el cache compartido — así la pantalla responde al instante
+  // sin esperar el refetch. Se combinan con lo que venga del cache.
+  const [localOverride, setLocalOverride] = useState<Category[] | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) router.push('/login');
   }, [user, authLoading, router]);
 
-  const fetchCategories = useCallback(async () => {
-    if (!user) return;
-    const { data, error } = await supabase
-      .from('categories')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: true });
-    if (!error && data) setAllCategories(data);
-    setLoading(false);
-  }, [user]);
+  const { data: cachedCategories, loading } = useCachedResource(
+    peekCategories,
+    () => (user ? getCategoriesCached(user.id) : null),
+    [user?.id]
+  );
 
-  useEffect(() => {
-    if (user) fetchCategories();
-  }, [user, fetchCategories]);
-
+  const allCategories = localOverride ?? cachedCategories ?? [];
   const topLevel = allCategories.filter((c) => !c.parent_id);
   const subCount = (catId: string) => allCategories.filter((c) => c.parent_id === catId).length;
 
   const handleSaved = (saved: Category) => {
-    setAllCategories((prev) => {
-      const exists = prev.find((c) => c.id === saved.id);
-      return exists ? prev.map((c) => (c.id === saved.id ? saved : c)) : [...prev, saved];
+    setLocalOverride((prev) => {
+      const base = prev ?? cachedCategories ?? [];
+      const exists = base.find((c) => c.id === saved.id);
+      return exists ? base.map((c) => (c.id === saved.id ? saved : c)) : [...base, saved];
     });
+    invalidateAppData();
     setShowCreate(false);
     setEditingCategory(null);
   };
@@ -66,7 +64,12 @@ export default function CategoriesPage() {
     try {
       const { error } = await supabase.from('categories').delete().eq('id', category.id);
       if (error) throw error;
-      setAllCategories((prev) => prev.filter((c) => c.id !== category.id && c.parent_id !== category.id));
+      setLocalOverride((prev) =>
+        (prev ?? cachedCategories ?? []).filter(
+          (c) => c.id !== category.id && c.parent_id !== category.id
+        )
+      );
+      invalidateAppData();
       setActionSheet(null);
     } catch {
       setDeleteError(
@@ -82,7 +85,7 @@ export default function CategoriesPage() {
     setActionSheet({ type: 'menu', category: cat });
   };
 
-  if (authLoading || loading) {
+  if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-950">
         <div className="animate-spin h-8 w-8 border-2 border-violet-600 border-t-transparent rounded-full" />
@@ -100,11 +103,13 @@ export default function CategoriesPage() {
         onMenu={() => setMenuOpen(true)}
       />
       <p className="text-slate-500 text-sm text-center px-4 mb-2">
-        {topLevel.length} {topLevel.length === 1 ? 'categoría' : 'categorías'}
+        {loading ? '' : `${topLevel.length} ${topLevel.length === 1 ? 'categoría' : 'categorías'}`}
       </p>
 
       <div className="px-4">
-        {topLevel.length === 0 ? (
+        {loading ? (
+          <SkeletonGrid />
+        ) : topLevel.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <Tags size={56} strokeWidth={1.25} className="text-slate-700 mb-4" />
             <p className="text-slate-400 mb-1 font-medium">No tenés categorías todavía</p>

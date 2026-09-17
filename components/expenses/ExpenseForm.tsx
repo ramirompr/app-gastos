@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { Category, Expense } from '@/lib/types';
-import { fetchUserCategories } from '@/lib/categories';
+import { peekCategories, getCategoriesCached, useCachedResource, invalidateAppData } from '@/lib/app-data';
 import { calculateAmountsInBothCurrencies, tryCalculateAmountsInBothCurrencies } from '@/lib/exchange-rates';
 import { computeInstallments } from '@/lib/installments';
 import { CategoryFormModal } from '@/components/categories/CategoryFormModal';
@@ -24,7 +24,7 @@ type SplitType = 'personal' | 'invited' | 'shared';
 const SPLIT_OPTIONS: { value: SplitType; label: string }[] = [
   { value: 'personal', label: 'Personal' },
   { value: 'invited', label: 'Invitado' },
-  { value: 'shared', label: 'Parcial' },
+  { value: 'shared', label: 'Compartido' },
 ];
 
 interface ExpenseFormProps {
@@ -43,8 +43,10 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
   const { user, loading: authLoading } = useAuth();
   const isEdit = !!expense;
 
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [loadingCategories, setLoadingCategories] = useState(true);
+  // Categorías creadas desde este formulario (botón "Nueva") todavía no
+  // reflejadas en el cache compartido: se muestran igual sin esperar el
+  // refetch.
+  const [localNewCategories, setLocalNewCategories] = useState<Category[]>([]);
 
   const [amount, setAmount] = useState(expense ? String(expense.amount) : '');
   const [currency, setCurrency] = useState<'ARS' | 'USD'>(expense?.currency ?? 'ARS');
@@ -62,10 +64,23 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
   const [showDatePicker, setShowDatePicker] = useState(!!expense);
 
   const [splitType, setSplitType] = useState<SplitType>(expense?.split_type ?? 'personal');
-  const [partnerShare, setPartnerShare] = useState(
-    expense?.partner_share ? String(expense.partner_share) : ''
-  );
+  // Para gastos "compartidos" este campo representa tu propia parte del
+  // gasto, no lo que te deben (eso es partner_share en la DB) — por eso al
+  // editar hay que invertir el cálculo. Para "invitado" sigue siendo el
+  // monto que invitaste, igual que en la DB.
+  const [partnerShare, setPartnerShare] = useState(() => {
+    if (!expense?.partner_share) return '';
+    if (expense.split_type === 'shared') return String(expense.amount - expense.partner_share);
+    return String(expense.partner_share);
+  });
   const [sharedWith, setSharedWith] = useState(expense?.shared_with ?? '');
+
+  const handleSplitTypeChange = (value: SplitType) => {
+    setSplitType(value);
+    setPartnerShare('');
+    setSharedWith('');
+    clearFieldError('partnerShare');
+  };
 
   const [installmentsEnabled, setInstallmentsEnabled] = useState(false);
   const [numInstallments, setNumInstallments] = useState(3);
@@ -85,15 +100,12 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
     if (!authLoading && !user) router.push('/login');
   }, [user, authLoading, router]);
 
-  const fetchCategories = useCallback(async () => {
-    if (!user) return;
-    setCategories(await fetchUserCategories(user.id));
-    setLoadingCategories(false);
-  }, [user]);
-
-  useEffect(() => {
-    if (user) fetchCategories();
-  }, [user, fetchCategories]);
+  const { data: cachedCategories, loading: loadingCategories } = useCachedResource(
+    peekCategories,
+    () => (user ? getCategoriesCached(user.id) : null),
+    [user?.id]
+  );
+  const categories = [...(cachedCategories ?? []), ...localNewCategories];
 
   const topLevel = categories.filter((c) => !c.parent_id);
   const subsOf = (id: string) => categories.filter((c) => c.parent_id === id);
@@ -137,7 +149,13 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
   const handleSubmit = async () => {
     setError('');
 
-    const partnerShareTotal = parseFloat(partnerShare) || 0;
+    // Lo que se tipeó en el campo: para "shared" es tu propia parte del
+    // gasto, para "invited" es el monto que invitaste.
+    const partnerShareInput = parseFloat(partnerShare) || 0;
+    // Lo que efectivamente se guarda en partner_share (DB): para "shared" es
+    // lo que te deben devolver (total - tu parte), para "invited" es el
+    // monto invitado tal cual.
+    const partnerShareTotal = splitType === 'shared' ? parsedAmount - partnerShareInput : partnerShareInput;
     const errors: FieldErrors = {};
 
     if (parsedAmount <= 0) {
@@ -146,13 +164,13 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
     if (!selectedCategory) {
       errors.category = 'Elegí una categoría';
     }
-    if (splitType !== 'personal' && partnerShareTotal <= 0) {
+    if (splitType !== 'personal' && partnerShareInput <= 0) {
       errors.partnerShare =
-        splitType === 'shared' ? 'Ingresá cuánto te tiene que devolver' : 'Ingresá cuánto invitaste';
-    } else if (splitType !== 'personal' && partnerShareTotal > parsedAmount) {
+        splitType === 'shared' ? 'Ingresá tu parte de este gasto' : 'Ingresá cuánto invitaste';
+    } else if (splitType !== 'personal' && partnerShareInput > parsedAmount) {
       errors.partnerShare =
         splitType === 'shared'
-          ? 'Ese monto no puede ser mayor al total del gasto'
+          ? 'Tu parte no puede ser mayor al total del gasto'
           : 'El monto invitado no puede ser mayor al total del gasto';
     }
     if (
@@ -199,6 +217,7 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
           .eq('id', expense!.id);
         if (updateError) throw updateError;
 
+        invalidateAppData();
         router.back();
         return;
       }
@@ -290,6 +309,7 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
         if (insertError) throw insertError;
       }
 
+      invalidateAppData();
       router.push('/dashboard');
     } catch (err) {
       console.error(err);
@@ -457,7 +477,7 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
             {SPLIT_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
-                onClick={() => setSplitType(opt.value)}
+                onClick={() => handleSplitTypeChange(opt.value)}
                 className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition ${
                   splitType === opt.value ? 'bg-violet-600 text-white' : 'bg-slate-800 text-slate-400'
                 }`}
@@ -472,7 +492,7 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
                 <p className="text-red-400 text-xs font-medium mt-3">{fieldErrors.partnerShare}</p>
               )}
               <MoneyInput
-                placeholder={splitType === 'shared' ? 'Cuánto te tiene que devolver' : 'Cuánto invitaste'}
+                placeholder={splitType === 'shared' ? 'Tu parte de este gasto' : 'Cuánto invitaste'}
                 value={partnerShare}
                 onChange={(raw) => {
                   setPartnerShare(raw);
@@ -663,9 +683,10 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
           parentCategories={topLevel}
           onClose={() => setShowCreateCategory(false)}
           onSaved={(cat) => {
-            setCategories((prev) => [...prev, cat]);
+            setLocalNewCategories((prev) => [...prev, cat]);
             setSelectedCategoryId(cat.id);
             setShowCreateCategory(false);
+            invalidateAppData();
           }}
         />
       )}

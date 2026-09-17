@@ -1,21 +1,32 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { supabase } from '@/lib/supabase';
-import { Category, Expense, RecurringExpense } from '@/lib/types';
-import { getTopLevelCategory, fetchUserCategories } from '@/lib/categories';
+import { Expense, RecurringExpense } from '@/lib/types';
+import { getTopLevelCategory } from '@/lib/categories';
 import { Emoji } from '@/components/ui/Emoji';
 import { useCurrencyDisplay } from '@/lib/currency-display-context';
 import { pickAmount, formatMoney } from '@/lib/format-money';
 import { resolvePendingExchangeRates } from '@/lib/expenses';
-import { getExchangeRate, convertWithRate } from '@/lib/exchange-rates';
+import { convertWithRate } from '@/lib/exchange-rates';
 import { isRecurringDueInMonth } from '@/lib/recurring';
+import {
+  peekCategories,
+  getCategoriesCached,
+  peekHomeRange,
+  getHomeRangeCached,
+  peekRecurring,
+  getRecurringCached,
+  useCachedResource,
+  invalidateAppData,
+  prefetchAppData,
+} from '@/lib/app-data';
 import { ConfirmPaymentSheet } from '@/components/recurring/ConfirmPaymentSheet';
 import { DonutChart } from '@/components/dashboard/DonutChart';
 import { AppMenu } from '@/components/layout/AppMenu';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { SkeletonCircle, SkeletonList } from '@/components/ui/Skeleton';
 import {
   Period,
   getRangeForPeriod,
@@ -23,7 +34,7 @@ import {
   shiftAnchor,
   canGoNext,
 } from '@/lib/date-periods';
-import { format, startOfMonth, endOfMonth } from 'date-fns';
+import { format } from 'date-fns';
 
 interface RecurringStatus {
   recurring: RecurringExpense;
@@ -41,21 +52,18 @@ export default function DashboardPage() {
   const { user, loading: authLoading } = useAuth();
   const { showUsd } = useCurrencyDisplay();
 
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [loading, setLoading] = useState(true);
-
   const [isCustomRange, setIsCustomRange] = useState(false);
   const [period, setPeriod] = useState<Period>('month');
   const [anchor, setAnchor] = useState(new Date());
   const [customStart, setCustomStart] = useState(format(new Date(), 'yyyy-MM-01'));
   const [customEnd, setCustomEnd] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [menuOpen, setMenuOpen] = useState(false);
-
-  const [recurringStatuses, setRecurringStatuses] = useState<RecurringStatus[]>([]);
-  const [recurringRate, setRecurringRate] = useState<number | null>(null);
-  const [loadingRecurring, setLoadingRecurring] = useState(true);
   const [payingRecurring, setPayingRecurring] = useState<RecurringExpense | null>(null);
+
+  // Se incrementa cuando se resuelven cotizaciones que estaban pendientes,
+  // para forzar un refetch de categorías/gastos (invalidamos el cache justo
+  // antes).
+  const [refreshTick, setRefreshTick] = useState(0);
 
   const pointerStartX = useRef<number | null>(null);
 
@@ -70,57 +78,74 @@ export default function DashboardPage() {
     return getRangeForPeriod(period, anchor);
   }, [isCustomRange, period, anchor, customStart, customEnd]);
 
-  const fetchData = useCallback(async () => {
-    if (!user) return;
-    setLoading(true);
-    const [cats, { data: exps }] = await Promise.all([
-      fetchUserCategories(user.id),
-      supabase
-        .from('expenses')
-        .select('*')
-        .eq('user_id', user.id)
-        .gte('date', format(range.start, 'yyyy-MM-dd'))
-        .lte('date', format(range.end, 'yyyy-MM-dd')),
-    ]);
-    setCategories(cats);
-    setExpenses(exps ?? []);
-    setLoading(false);
-  }, [user, range]);
+  const { data: categoriesData, loading: loadingCategories } = useCachedResource(
+    peekCategories,
+    () => (user ? getCategoriesCached(user.id) : null),
+    [user?.id, refreshTick]
+  );
+  const { data: expensesData, loading: loadingExpenses } = useCachedResource(
+    () => peekHomeRange(range),
+    () => (user ? getHomeRangeCached(user.id, range) : null),
+    [user?.id, range, refreshTick]
+  );
+  const categories = categoriesData ?? [];
+  const expenses = expensesData ?? [];
 
+  // A diferencia de `loading`, que vuelve a true cada vez que se navega a un
+  // período todavía no cacheado, este flag queda en true para siempre apenas
+  // se resuelve la primera carga: así la estructura de la pantalla nunca más
+  // se reemplaza por un esqueleto, aunque el período que se esté mirando
+  // todavía esté cargando (mientras tanto se sigue viendo el período
+  // anterior, hasta que llega la data nueva).
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   useEffect(() => {
-    if (user) fetchData();
-  }, [user, fetchData]);
+    if (!loadingCategories && !loadingExpenses) setHasLoadedOnce(true);
+  }, [loadingCategories, loadingExpenses]);
+
+  // Apenas termina la primerísima carga de Home, precargamos en segundo
+  // plano el resto de las pantallas del menú para que abran al instante.
+  const prefetchedRef = useRef(false);
+  useEffect(() => {
+    if (!user || prefetchedRef.current || !hasLoadedOnce) return;
+    prefetchedRef.current = true;
+    prefetchAppData(user.id);
+  }, [user, hasLoadedOnce]);
+
+  // Precarga en segundo plano el período anterior y el siguiente, para que
+  // al navegar con las flechas (o el swipe) ya estén en cache y aparezcan al
+  // instante en vez de tener que ir a consultar la base en ese momento.
+  useEffect(() => {
+    if (!user || isCustomRange) return;
+    const neighborAnchors = [shiftAnchor(period, anchor, -1)];
+    if (canGoNext(period, anchor)) neighborAnchors.push(shiftAnchor(period, anchor, 1));
+    neighborAnchors.forEach((a) => {
+      getHomeRangeCached(user.id, getRangeForPeriod(period, a)).catch(() => {});
+    });
+  }, [user, period, anchor, isCustomRange]);
 
   useEffect(() => {
     if (!user) return;
     resolvePendingExchangeRates(user.id).then((count) => {
-      if (count > 0) fetchData();
+      if (count > 0) {
+        invalidateAppData();
+        setRefreshTick((t) => t + 1);
+      }
     });
     // Solo una vez por apertura del dashboard, no hace falta repetirlo por cada refetch de rango.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
-  const fetchRecurring = useCallback(async () => {
-    if (!user) return;
-    setLoadingRecurring(true);
-    const monthStart = format(startOfMonth(new Date()), 'yyyy-MM-dd');
-    const monthEnd = format(endOfMonth(new Date()), 'yyyy-MM-dd');
+  const { data: recurringData } = useCachedResource(
+    peekRecurring,
+    () => (user ? getRecurringCached(user.id) : null),
+    [user?.id, refreshTick]
+  );
 
-    const [{ data: recs }, { data: confirmed }, rate] = await Promise.all([
-      supabase.from('recurring_expenses').select('*').eq('user_id', user.id).eq('active', true),
-      supabase
-        .from('expenses')
-        .select('recurring_expense_id')
-        .eq('user_id', user.id)
-        .not('recurring_expense_id', 'is', null)
-        .gte('date', monthStart)
-        .lte('date', monthEnd),
-      getExchangeRate(new Date()).catch(() => null),
-    ]);
-
-    const confirmedIds = new Set((confirmed ?? []).map((e) => e.recurring_expense_id));
+  const recurringStatuses = useMemo<RecurringStatus[]>(() => {
+    if (!recurringData) return [];
+    const confirmedIds = new Set(recurringData.confirmedThisMonth.map((e) => e.recurring_expense_id));
     const currentDay = new Date().getDate();
-    const statuses = (recs ?? [])
+    return recurringData.recurrings
       .filter((r) => isRecurringDueInMonth(r) && !confirmedIds.has(r.id))
       .map((r) => ({ recurring: r, isOverdue: r.day_of_month <= currentDay }))
       .sort((a, b) =>
@@ -130,18 +155,10 @@ export default function DashboardPage() {
           ? -1
           : 1
       );
-
-    setRecurringStatuses(statuses);
-    setRecurringRate(rate);
-    setLoadingRecurring(false);
-  }, [user]);
-
-  useEffect(() => {
-    if (user) fetchRecurring();
-  }, [user, fetchRecurring]);
+  }, [recurringData]);
 
   const pendingCount = useMemo(
-    () => expenses.filter((e) => e.exchange_rate_used == null).length,
+    () => expenses.filter((e: Expense) => e.exchange_rate_used == null).length,
     [expenses]
   );
 
@@ -281,10 +298,8 @@ export default function DashboardPage() {
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
       >
-        {loading ? (
-          <div className="w-[220px] h-[220px] flex items-center justify-center">
-            <div className="animate-spin h-8 w-8 border-2 border-violet-600 border-t-transparent rounded-full" />
-          </div>
+        {!hasLoadedOnce ? (
+          <SkeletonCircle />
         ) : (
           <DonutChart
             slices={breakdown.map((b) => ({ color: b.category.color, value: b.amount }))}
@@ -296,43 +311,49 @@ export default function DashboardPage() {
 
       {/* Category breakdown */}
       <div className="px-4 flex flex-col gap-3">
-        {!loading && pendingCount > 0 && (
-          <p className="text-amber-400 text-xs text-center bg-amber-400/10 rounded-lg px-3 py-2">
-            {pendingCount} {pendingCount === 1 ? 'gasto' : 'gastos'} con cotización del dólar
-            pendiente — no {pendingCount === 1 ? 'está incluido' : 'están incluidos'} en el total
-            todavía.
-          </p>
+        {!hasLoadedOnce ? (
+          <SkeletonList count={4} />
+        ) : (
+          <>
+            {pendingCount > 0 && (
+              <p className="text-amber-400 text-xs text-center bg-amber-400/10 rounded-lg px-3 py-2">
+                {pendingCount} {pendingCount === 1 ? 'gasto' : 'gastos'} con cotización del dólar
+                pendiente — no {pendingCount === 1 ? 'está incluido' : 'están incluidos'} en el total
+                todavía.
+              </p>
+            )}
+            {breakdown.length === 0 && (
+              <p className="text-center text-slate-500 text-sm py-12">
+                No hay gastos cargados en este período.
+              </p>
+            )}
+            {breakdown.map(({ category, amount, percent }) => (
+              <div
+                key={category.id}
+                onClick={() =>
+                  router.push(
+                    `/dashboard/expenses?categoryId=${category.id}&start=${format(range.start, 'yyyy-MM-dd')}&end=${format(range.end, 'yyyy-MM-dd')}`
+                  )
+                }
+                className="flex items-center gap-3 bg-slate-800/60 rounded-xl px-4 py-3 cursor-pointer hover:bg-slate-800 active:scale-[0.98] transition-all"
+              >
+                <div
+                  className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
+                  style={{ backgroundColor: category.color }}
+                >
+                  <Emoji emoji={category.icon} size={18} />
+                </div>
+                <p className="flex-1 text-white text-sm font-medium">{category.name}</p>
+                <p className="text-slate-500 text-sm w-10 text-right">{percent} %</p>
+                <p className="text-white text-sm font-medium w-28 text-right">{formatMoney(amount, showUsd)}</p>
+              </div>
+            ))}
+          </>
         )}
-        {!loading && breakdown.length === 0 && (
-          <p className="text-center text-slate-500 text-sm py-12">
-            No hay gastos cargados en este período.
-          </p>
-        )}
-        {breakdown.map(({ category, amount, percent }) => (
-          <div
-            key={category.id}
-            onClick={() =>
-              router.push(
-                `/dashboard/expenses?categoryId=${category.id}&start=${format(range.start, 'yyyy-MM-dd')}&end=${format(range.end, 'yyyy-MM-dd')}`
-              )
-            }
-            className="flex items-center gap-3 bg-slate-800/60 rounded-xl px-4 py-3 cursor-pointer hover:bg-slate-800 active:scale-[0.98] transition-all"
-          >
-            <div
-              className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
-              style={{ backgroundColor: category.color }}
-            >
-              <Emoji emoji={category.icon} size={18} />
-            </div>
-            <p className="flex-1 text-white text-sm font-medium">{category.name}</p>
-            <p className="text-slate-500 text-sm w-10 text-right">{percent} %</p>
-            <p className="text-white text-sm font-medium w-28 text-right">{formatMoney(amount, showUsd)}</p>
-          </div>
-        ))}
       </div>
 
       {/* Gastos recurrentes de este mes, sin confirmar todavía */}
-      {!loadingRecurring && recurringStatuses.length > 0 && (
+      {recurringStatuses.length > 0 && (
         <div className="px-4 flex flex-col gap-3 mt-6">
           <p className="text-slate-500 text-xs uppercase tracking-wider font-semibold px-1">
             Recurrentes de este mes
@@ -343,8 +364,8 @@ export default function DashboardPage() {
             const displayCurrency = showUsd ? 'USD' : 'ARS';
             const needsConversion = recurring.currency !== displayCurrency;
             const amount =
-              !needsConversion || recurringRate !== null
-                ? convertWithRate(recurring.default_amount, recurring.currency, displayCurrency, recurringRate ?? 1)
+              !needsConversion || recurringData?.rate != null
+                ? convertWithRate(recurring.default_amount, recurring.currency, displayCurrency, recurringData?.rate ?? 1)
                 : null;
             return (
               <div
@@ -399,7 +420,7 @@ export default function DashboardPage() {
           onClose={() => setPayingRecurring(null)}
           onPaid={() => {
             setPayingRecurring(null);
-            fetchRecurring();
+            setRefreshTick((t) => t + 1);
           }}
         />
       )}

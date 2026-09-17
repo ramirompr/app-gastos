@@ -1,19 +1,26 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { supabase } from '@/lib/supabase';
-import { Category, Expense } from '@/lib/types';
-import { getTopLevelCategory, fetchUserCategories } from '@/lib/categories';
+import { Category } from '@/lib/types';
+import { getTopLevelCategory } from '@/lib/categories';
 import { Emoji } from '@/components/ui/Emoji';
 import { niceAxis } from '@/lib/chart-scale';
 import { useCurrencyDisplay } from '@/lib/currency-display-context';
 import { pickAmount, formatMoney } from '@/lib/format-money';
+import {
+  peekCategories,
+  getCategoriesCached,
+  peekAnalysisRange,
+  getAnalysisRangeCached,
+  useCachedResource,
+} from '@/lib/app-data';
 import { StackedBarChart, MonthBar } from '@/components/analysis/StackedBarChart';
 import { MiniProportionBar } from '@/components/analysis/MiniProportionBar';
 import { AppMenu } from '@/components/layout/AppMenu';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { SkeletonBlock, SkeletonList } from '@/components/ui/Skeleton';
 import { format, startOfMonth, endOfMonth, subMonths, isSameMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { capitalize } from '@/lib/date-periods';
@@ -37,36 +44,25 @@ export default function AnalysisPage() {
   const { showUsd } = useCurrencyDisplay();
 
   const [numMonths, setNumMonths] = useState<3 | 6 | 12>(6);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) router.push('/login');
   }, [user, authLoading, router]);
 
-  const rangeStart = useMemo(() => startOfMonth(subMonths(new Date(), numMonths - 1)), [numMonths]);
-
-  const fetchData = useCallback(async () => {
-    if (!user) return;
-    setLoading(true);
-    const [cats, { data: exps }] = await Promise.all([
-      fetchUserCategories(user.id),
-      supabase
-        .from('expenses')
-        .select('*')
-        .eq('user_id', user.id)
-        .gte('date', format(rangeStart, 'yyyy-MM-dd')),
-    ]);
-    setCategories(cats);
-    setExpenses(exps ?? []);
-    setLoading(false);
-  }, [user, rangeStart]);
-
-  useEffect(() => {
-    if (user) fetchData();
-  }, [user, fetchData]);
+  const { data: cachedCategories, loading: loadingCategories } = useCachedResource(
+    peekCategories,
+    () => (user ? getCategoriesCached(user.id) : null),
+    [user?.id]
+  );
+  const { data: cachedExpenses, loading: loadingExpenses } = useCachedResource(
+    () => peekAnalysisRange(numMonths),
+    () => (user ? getAnalysisRangeCached(user.id, numMonths) : null),
+    [user?.id, numMonths]
+  );
+  const categories = cachedCategories ?? [];
+  const expenses = cachedExpenses ?? [];
+  const loading = loadingCategories || loadingExpenses;
 
   const { months, axisMax, ticks, legend, monthlyDetail } = useMemo(() => {
     const monthDates = Array.from({ length: numMonths }, (_, i) =>
@@ -187,8 +183,9 @@ export default function AnalysisPage() {
         </div>
 
         {loading ? (
-          <div className="h-[280px] flex items-center justify-center">
-            <div className="animate-spin h-8 w-8 border-2 border-violet-600 border-t-transparent rounded-full" />
+          <div className="flex flex-col gap-6">
+            <SkeletonBlock className="h-[220px] w-full" />
+            <SkeletonList count={4} />
           </div>
         ) : (
           <>

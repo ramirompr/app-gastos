@@ -1,16 +1,22 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { supabase } from '@/lib/supabase';
-import { Category, Expense, ExpenseInstallmentPlan } from '@/lib/types';
-import { fetchUserCategories } from '@/lib/categories';
+import { ExpenseInstallmentPlan } from '@/lib/types';
 import { Emoji } from '@/components/ui/Emoji';
 import { useCurrencyDisplay } from '@/lib/currency-display-context';
 import { pickAmount, formatMoney } from '@/lib/format-money';
+import {
+  peekCategories,
+  getCategoriesCached,
+  peekPendingInstallments,
+  getPendingInstallmentsCached,
+  useCachedResource,
+} from '@/lib/app-data';
 import { AppMenu } from '@/components/layout/AppMenu';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { SkeletonList } from '@/components/ui/Skeleton';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -31,33 +37,26 @@ export default function PendingInstallmentsPage() {
   const { user, loading: authLoading } = useAuth();
   const { showUsd } = useCurrencyDisplay();
 
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [plans, setPlans] = useState<ExpenseInstallmentPlan[]>([]);
-  const [installmentExpenses, setInstallmentExpenses] = useState<Expense[]>([]);
-  const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) router.push('/login');
   }, [user, authLoading, router]);
 
-  const fetchData = useCallback(async () => {
-    if (!user) return;
-    setLoading(true);
-    const [cats, { data: plansData }, { data: exps }] = await Promise.all([
-      fetchUserCategories(user.id),
-      supabase.from('expense_installment_plans').select('*').eq('user_id', user.id),
-      supabase.from('expenses').select('*').eq('user_id', user.id).not('installment_plan_id', 'is', null),
-    ]);
-    setCategories(cats);
-    setPlans(plansData ?? []);
-    setInstallmentExpenses(exps ?? []);
-    setLoading(false);
-  }, [user]);
-
-  useEffect(() => {
-    if (user) fetchData();
-  }, [user, fetchData]);
+  const { data: cachedCategories, loading: loadingCategories } = useCachedResource(
+    peekCategories,
+    () => (user ? getCategoriesCached(user.id) : null),
+    [user?.id]
+  );
+  const { data: cachedInstallments, loading: loadingInstallments } = useCachedResource(
+    peekPendingInstallments,
+    () => (user ? getPendingInstallmentsCached(user.id) : null),
+    [user?.id]
+  );
+  const categories = cachedCategories ?? [];
+  const plans = cachedInstallments?.plans ?? [];
+  const installmentExpenses = cachedInstallments?.expenses ?? [];
+  const loading = loadingCategories || loadingInstallments;
 
   const activePlans = useMemo(() => {
     const today = format(new Date(), 'yyyy-MM-dd');
@@ -89,7 +88,7 @@ export default function PendingInstallmentsPage() {
     return result.sort((a, b) => (a.nextDate ?? '').localeCompare(b.nextDate ?? ''));
   }, [plans, installmentExpenses]);
 
-  if (authLoading || loading) {
+  if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-950">
         <div className="animate-spin h-8 w-8 border-2 border-violet-600 border-t-transparent rounded-full" />
@@ -108,12 +107,13 @@ export default function PendingInstallmentsPage() {
       />
       <div className="px-4 pb-4">
         <p className="text-slate-500 text-sm text-center">
-          {activePlans.length} {activePlans.length === 1 ? 'plan activo' : 'planes activos'}
+          {loading ? '' : `${activePlans.length} ${activePlans.length === 1 ? 'plan activo' : 'planes activos'}`}
         </p>
       </div>
 
       <div className="px-4 flex flex-col gap-3">
-        {activePlans.length === 0 && (
+        {loading && <SkeletonList count={3} />}
+        {!loading && activePlans.length === 0 && (
           <p className="text-center text-slate-500 text-sm py-16">
             No tenés gastos en cuotas corriendo actualmente.
           </p>

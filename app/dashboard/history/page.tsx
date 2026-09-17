@@ -1,24 +1,29 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { supabase } from '@/lib/supabase';
 import { Category, Expense, ExpenseInstallmentPlan } from '@/lib/types';
-import { fetchUserCategories } from '@/lib/categories';
 import { Emoji } from '@/components/ui/Emoji';
 import { ChevronUp, ChevronDown, Repeat } from 'lucide-react';
 import { settleSharedExpense, deleteExpense } from '@/lib/expenses';
 import { useCurrencyDisplay } from '@/lib/currency-display-context';
 import { pickAmount, formatMoney, formatExpenseAmount, formatPartnerShare } from '@/lib/format-money';
+import {
+  peekCategories,
+  getCategoriesCached,
+  peekHistory,
+  getHistoryCached,
+  useCachedResource,
+} from '@/lib/app-data';
 import { AppMenu } from '@/components/layout/AppMenu';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { ExpenseRowMenu } from '@/components/expenses/ExpenseRowMenu';
+import { SkeletonList } from '@/components/ui/Skeleton';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
 const PAGE_SIZE = 30;
-const FETCH_CAP = 500;
 
 type HistoryItem =
   | { kind: 'expense'; sortKey: string; expense: Expense }
@@ -29,47 +34,36 @@ export default function HistoryPage() {
   const { user, loading: authLoading } = useAuth();
   const { showUsd } = useCurrencyDisplay();
 
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [plainExpenses, setPlainExpenses] = useState<Expense[]>([]);
-  const [plans, setPlans] = useState<ExpenseInstallmentPlan[]>([]);
-  const [installmentExpenses, setInstallmentExpenses] = useState<Expense[]>([]);
-  const [loading, setLoading] = useState(true);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [expandedPlanId, setExpandedPlanId] = useState<string | null>(null);
 
+  // Ediciones optimistas locales (saldar/borrar), todavía no reflejadas en
+  // el cache compartido (ya invalidado, pero recién se relee en la próxima
+  // visita a esta pantalla).
+  const [localPlainExpenses, setLocalPlainExpenses] = useState<Expense[] | null>(null);
+  const [localInstallmentExpenses, setLocalInstallmentExpenses] = useState<Expense[] | null>(null);
+
   useEffect(() => {
     if (!authLoading && !user) router.push('/login');
   }, [user, authLoading, router]);
 
-  const fetchData = useCallback(async () => {
-    if (!user) return;
-    setLoading(true);
-    const [cats, { data: plainExps }, { data: plansData }, { data: installExps }] =
-      await Promise.all([
-        fetchUserCategories(user.id),
-        supabase
-          .from('expenses')
-          .select('*')
-          .eq('user_id', user.id)
-          .is('installment_plan_id', null)
-          .order('created_at', { ascending: false })
-          .limit(FETCH_CAP),
-        supabase.from('expense_installment_plans').select('*').eq('user_id', user.id),
-        supabase.from('expenses').select('*').eq('user_id', user.id).not('installment_plan_id', 'is', null),
-      ]);
-    setCategories(cats);
-    setPlainExpenses(plainExps ?? []);
-    setPlans(plansData ?? []);
-    setInstallmentExpenses(installExps ?? []);
-    setVisibleCount(PAGE_SIZE);
-    setLoading(false);
-  }, [user]);
-
-  useEffect(() => {
-    if (user) fetchData();
-  }, [user, fetchData]);
+  const { data: cachedCategories, loading: loadingCategories } = useCachedResource(
+    peekCategories,
+    () => (user ? getCategoriesCached(user.id) : null),
+    [user?.id]
+  );
+  const { data: cachedHistory, loading: loadingHistory } = useCachedResource(
+    peekHistory,
+    () => (user ? getHistoryCached(user.id) : null),
+    [user?.id]
+  );
+  const categories = cachedCategories ?? [];
+  const plainExpenses = localPlainExpenses ?? cachedHistory?.plainExpenses ?? [];
+  const plans = cachedHistory?.plans ?? [];
+  const installmentExpenses = localInstallmentExpenses ?? cachedHistory?.installmentExpenses ?? [];
+  const loading = loadingCategories || loadingHistory;
 
   const items = useMemo(() => {
     const list: HistoryItem[] = plainExpenses.map((expense) => ({
@@ -99,8 +93,12 @@ export default function HistoryPage() {
     setRowError(null);
     try {
       const updated = await settleSharedExpense(expense);
-      setPlainExpenses((prev) => prev.map((e) => (e.id === expense.id ? updated : e)));
-      setInstallmentExpenses((prev) => prev.map((e) => (e.id === expense.id ? updated : e)));
+      setLocalPlainExpenses((prev) =>
+        (prev ?? cachedHistory?.plainExpenses ?? []).map((e) => (e.id === expense.id ? updated : e))
+      );
+      setLocalInstallmentExpenses((prev) =>
+        (prev ?? cachedHistory?.installmentExpenses ?? []).map((e) => (e.id === expense.id ? updated : e))
+      );
     } catch (err) {
       console.error(err);
       setRowError({
@@ -115,8 +113,10 @@ export default function HistoryPage() {
     setRowError(null);
     try {
       await deleteExpense(id);
-      setPlainExpenses((prev) => prev.filter((e) => e.id !== id));
-      setInstallmentExpenses((prev) => prev.filter((e) => e.id !== id));
+      setLocalPlainExpenses((prev) => (prev ?? cachedHistory?.plainExpenses ?? []).filter((e) => e.id !== id));
+      setLocalInstallmentExpenses((prev) =>
+        (prev ?? cachedHistory?.installmentExpenses ?? []).filter((e) => e.id !== id)
+      );
     } catch (err) {
       console.error(err);
       setRowError({ id, message: 'No se pudo eliminar. Intentá de nuevo.' });
@@ -124,7 +124,7 @@ export default function HistoryPage() {
     }
   };
 
-  if (authLoading || loading) {
+  if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-950">
         <div className="animate-spin h-8 w-8 border-2 border-violet-600 border-t-transparent rounded-full" />
@@ -139,7 +139,8 @@ export default function HistoryPage() {
       <PageHeader title="Historial" onBack={() => router.push('/dashboard')} onMenu={() => setMenuOpen(true)} />
 
       <div className="px-4 flex flex-col gap-3">
-        {items.length === 0 && (
+        {loading && <SkeletonList count={6} />}
+        {!loading && items.length === 0 && (
           <p className="text-center text-slate-500 text-sm py-16">No hay gastos cargados todavía.</p>
         )}
 

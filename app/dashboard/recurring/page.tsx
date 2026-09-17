@@ -1,24 +1,33 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
-import { Category, Expense, RecurringExpense } from '@/lib/types';
-import { fetchUserCategories, getTopLevelCategory } from '@/lib/categories';
+import { Expense, RecurringExpense } from '@/lib/types';
+import { getTopLevelCategory } from '@/lib/categories';
 import { Emoji } from '@/components/ui/Emoji';
 import { MoreVertical, Pencil, Trash2 } from 'lucide-react';
-import { getExchangeRate, convertWithRate } from '@/lib/exchange-rates';
+import { convertWithRate } from '@/lib/exchange-rates';
 import { isRecurringDueInMonth, monthsUntilNextDue, frequencyLabel } from '@/lib/recurring';
 import { useCurrencyDisplay } from '@/lib/currency-display-context';
 import { formatMoney } from '@/lib/format-money';
+import {
+  peekCategories,
+  getCategoriesCached,
+  peekRecurring,
+  getRecurringCached,
+  useCachedResource,
+  invalidateAppData,
+} from '@/lib/app-data';
 import { RecurringExpenseFormModal } from '@/components/recurring/RecurringExpenseFormModal';
 import { ConfirmPaymentSheet } from '@/components/recurring/ConfirmPaymentSheet';
 import { AppMenu } from '@/components/layout/AppMenu';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PlusIcon } from '@/components/icons/PlusIcon';
 import { BottomSheet } from '@/components/ui/BottomSheet';
-import { format, startOfMonth, endOfMonth, addMonths } from 'date-fns';
+import { SkeletonList } from '@/components/ui/Skeleton';
+import { format, addMonths } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { capitalize } from '@/lib/date-periods';
 
@@ -31,11 +40,6 @@ export default function RecurringExpensesPage() {
   const { user, loading: authLoading } = useAuth();
   const { showUsd } = useCurrencyDisplay();
 
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [recurrings, setRecurrings] = useState<RecurringExpense[]>([]);
-  const [confirmedThisMonth, setConfirmedThisMonth] = useState<Expense[]>([]);
-  const [todayRate, setTodayRate] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [editingRecurring, setEditingRecurring] = useState<RecurringExpense | null>(null);
@@ -45,43 +49,32 @@ export default function RecurringExpensesPage() {
 
   const [payingRecurring, setPayingRecurring] = useState<RecurringExpense | null>(null);
 
+  // Ediciones optimistas locales, todavía no reflejadas en el cache
+  // compartido (que ya se invalidó, pero recién se relee en la próxima
+  // visita a esta pantalla).
+  const [localRecurrings, setLocalRecurrings] = useState<RecurringExpense[] | null>(null);
+  const [localConfirmed, setLocalConfirmed] = useState<Expense[] | null>(null);
+
   useEffect(() => {
     if (!authLoading && !user) router.push('/login');
   }, [user, authLoading, router]);
 
-  const fetchData = useCallback(async () => {
-    if (!user) return;
-    setLoading(true);
-    const monthStart = format(startOfMonth(new Date()), 'yyyy-MM-dd');
-    const monthEnd = format(endOfMonth(new Date()), 'yyyy-MM-dd');
+  const { data: cachedCategories, loading: loadingCategories } = useCachedResource(
+    peekCategories,
+    () => (user ? getCategoriesCached(user.id) : null),
+    [user?.id]
+  );
+  const categories = cachedCategories ?? [];
 
-    const [cats, { data: recs }, { data: confirmed }, rate] = await Promise.all([
-      fetchUserCategories(user.id),
-      supabase
-        .from('recurring_expenses')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('active', true)
-        .order('day_of_month', { ascending: true }),
-      supabase
-        .from('expenses')
-        .select('*')
-        .eq('user_id', user.id)
-        .not('recurring_expense_id', 'is', null)
-        .gte('date', monthStart)
-        .lte('date', monthEnd),
-      getExchangeRate(new Date()).catch(() => null),
-    ]);
-    setCategories(cats);
-    setRecurrings(recs ?? []);
-    setConfirmedThisMonth(confirmed ?? []);
-    setTodayRate(rate);
-    setLoading(false);
-  }, [user]);
-
-  useEffect(() => {
-    if (user) fetchData();
-  }, [user, fetchData]);
+  const { data: cachedRecurring, loading: loadingRecurring } = useCachedResource(
+    peekRecurring,
+    () => (user ? getRecurringCached(user.id) : null),
+    [user?.id]
+  );
+  const recurrings = localRecurrings ?? cachedRecurring?.recurrings ?? [];
+  const confirmedThisMonth = localConfirmed ?? cachedRecurring?.confirmedThisMonth ?? [];
+  const todayRate = cachedRecurring?.rate ?? null;
+  const loading = loadingCategories || loadingRecurring;
 
   const statuses = useMemo(() => {
     const now = new Date();
@@ -107,9 +100,10 @@ export default function RecurringExpensesPage() {
   }, [recurrings, confirmedThisMonth]);
 
   const handleSaved = (saved: RecurringExpense) => {
-    setRecurrings((prev) => {
-      const exists = prev.find((r) => r.id === saved.id);
-      const next = exists ? prev.map((r) => (r.id === saved.id ? saved : r)) : [...prev, saved];
+    setLocalRecurrings((prev) => {
+      const base = prev ?? cachedRecurring?.recurrings ?? [];
+      const exists = base.find((r) => r.id === saved.id);
+      const next = exists ? base.map((r) => (r.id === saved.id ? saved : r)) : [...base, saved];
       return [...next].sort((a, b) => a.day_of_month - b.day_of_month);
     });
     setShowCreate(false);
@@ -122,7 +116,8 @@ export default function RecurringExpensesPage() {
     try {
       const { error } = await supabase.from('recurring_expenses').delete().eq('id', recurring.id);
       if (error) throw error;
-      setRecurrings((prev) => prev.filter((r) => r.id !== recurring.id));
+      setLocalRecurrings((prev) => (prev ?? cachedRecurring?.recurrings ?? []).filter((r) => r.id !== recurring.id));
+      invalidateAppData();
       setActionSheet(null);
     } catch (err) {
       console.error(err);
@@ -132,7 +127,7 @@ export default function RecurringExpensesPage() {
     }
   };
 
-  if (authLoading || loading) {
+  if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-950">
         <div className="animate-spin h-8 w-8 border-2 border-violet-600 border-t-transparent rounded-full" />
@@ -151,7 +146,8 @@ export default function RecurringExpensesPage() {
       />
 
       <div className="px-4 flex flex-col gap-3">
-        {statuses.length === 0 && (
+        {loading && <SkeletonList count={4} />}
+        {!loading && statuses.length === 0 && (
           <p className="text-center text-slate-500 text-sm py-16">
             No tenés gastos recurrentes cargados. Tocá el + para agregar uno.
           </p>
@@ -263,7 +259,7 @@ export default function RecurringExpensesPage() {
           recurring={payingRecurring}
           onClose={() => setPayingRecurring(null)}
           onPaid={(created) => {
-            setConfirmedThisMonth((prev) => [...prev, created]);
+            setLocalConfirmed((prev) => [...(prev ?? cachedRecurring?.confirmedThisMonth ?? []), created]);
             setPayingRecurring(null);
           }}
         />

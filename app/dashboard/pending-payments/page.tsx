@@ -1,17 +1,23 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { supabase } from '@/lib/supabase';
-import { Category, Expense } from '@/lib/types';
-import { fetchUserCategories } from '@/lib/categories';
+import { Expense } from '@/lib/types';
 import { Emoji } from '@/components/ui/Emoji';
 import { settleSharedExpense } from '@/lib/expenses';
 import { useCurrencyDisplay } from '@/lib/currency-display-context';
 import { pickAmount, formatMoney, formatExpenseAmount, formatPartnerShare, partnerShareInArsUsd } from '@/lib/format-money';
+import {
+  peekCategories,
+  getCategoriesCached,
+  peekPendingPayments,
+  getPendingPaymentsCached,
+  useCachedResource,
+} from '@/lib/app-data';
 import { AppMenu } from '@/components/layout/AppMenu';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { SkeletonList } from '@/components/ui/Skeleton';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -20,45 +26,37 @@ export default function PendingPaymentsPage() {
   const { user, loading: authLoading } = useAuth();
   const { showUsd } = useCurrencyDisplay();
 
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [settleError, setSettleError] = useState<{ id: string; message: string } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Gastos saldados en esta sesión, para sacarlos de la lista al instante sin
+  // esperar el refetch (el cache ya quedó invalidado por settleSharedExpense).
+  const [settledIds, setSettledIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!authLoading && !user) router.push('/login');
   }, [user, authLoading, router]);
 
-  const fetchData = useCallback(async () => {
-    if (!user) return;
-    setLoading(true);
-    const [cats, { data: exps }] = await Promise.all([
-      fetchUserCategories(user.id),
-      supabase
-        .from('expenses')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('split_type', 'shared')
-        .eq('is_settled', false)
-        .order('date', { ascending: true }),
-    ]);
-    setCategories(cats);
-    setExpenses(exps ?? []);
-    setLoading(false);
-  }, [user]);
-
-  useEffect(() => {
-    if (user) fetchData();
-  }, [user, fetchData]);
+  const { data: cachedCategories, loading: loadingCategories } = useCachedResource(
+    peekCategories,
+    () => (user ? getCategoriesCached(user.id) : null),
+    [user?.id]
+  );
+  const { data: cachedExpenses, loading: loadingExpenses } = useCachedResource(
+    peekPendingPayments,
+    () => (user ? getPendingPaymentsCached(user.id) : null),
+    [user?.id]
+  );
+  const categories = cachedCategories ?? [];
+  const expenses = (cachedExpenses ?? []).filter((e) => !settledIds.has(e.id));
+  const loading = loadingCategories || loadingExpenses;
 
   const markSettled = async (expense: Expense) => {
     setUpdatingId(expense.id);
     setSettleError(null);
     try {
       await settleSharedExpense(expense);
-      setExpenses((prev) => prev.filter((e) => e.id !== expense.id));
+      setSettledIds((prev) => new Set(prev).add(expense.id));
     } catch (err) {
       console.error(err);
       setSettleError({
@@ -69,7 +67,7 @@ export default function PendingPaymentsPage() {
     setUpdatingId(null);
   };
 
-  if (authLoading || loading) {
+  if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-950">
         <div className="animate-spin h-8 w-8 border-2 border-violet-600 border-t-transparent rounded-full" />
@@ -93,13 +91,15 @@ export default function PendingPaymentsPage() {
       />
       <div className="px-4 pb-4">
         <p className="text-slate-500 text-sm text-center">
-          {expenses.length} {expenses.length === 1 ? 'gasto' : 'gastos'} · Te deben{' '}
-          {formatMoney(totalOwed, showUsd)}
+          {loading
+            ? ''
+            : `${expenses.length} ${expenses.length === 1 ? 'gasto' : 'gastos'} · Te deben ${formatMoney(totalOwed, showUsd)}`}
         </p>
       </div>
 
       <div className="px-4 flex flex-col gap-3">
-        {expenses.length === 0 && (
+        {loading && <SkeletonList count={3} />}
+        {!loading && expenses.length === 0 && (
           <p className="text-center text-slate-500 text-sm py-16">
             No tenés gastos compartidos pendientes de devolución.
           </p>

@@ -65,7 +65,8 @@ function ExpensesListContent() {
       .in('category_id', categoryIds)
       .gte('date', start)
       .lte('date', end)
-      .order('date', { ascending: false });
+      .order('date', { ascending: false })
+      .order('created_at', { ascending: false });
     setExpenses(exps ?? []);
     setLoading(false);
   }, [user, categoryId, start, end]);
@@ -160,7 +161,7 @@ function ExpensesListContent() {
             </p>
             {totalInvited > 0 && (
               <p className="text-slate-500 text-xs mt-0.5">
-                Invitado: {formatMoney(totalInvited, showUsd)}
+                Invitaste: {formatMoney(totalInvited, showUsd)}
               </p>
             )}
           </div>

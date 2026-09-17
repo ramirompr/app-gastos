@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { Category, RecurringExpense } from '@/lib/types';
 import { FREQUENCY_OPTIONS } from '@/lib/recurring';
+import { invalidateAppData } from '@/lib/app-data';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { MoneyInput } from '@/components/ui/MoneyInput';
 import { Emoji } from '@/components/ui/Emoji';
@@ -115,6 +116,7 @@ export function RecurringExpenseFormModal({
         data = created;
       }
 
+      invalidateAppData();
       onSaved(data);
     } catch (err) {
       console.error(err);

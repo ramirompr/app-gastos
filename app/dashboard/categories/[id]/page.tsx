@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { Category } from '@/lib/types';
+import { invalidateAppData } from '@/lib/app-data';
 import { CategoryFormModal } from '@/components/categories/CategoryFormModal';
 import { AppMenu } from '@/components/layout/AppMenu';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -57,6 +58,7 @@ export default function SubcategoriesPage() {
       const exists = prev.find((c) => c.id === saved.id);
       return exists ? prev.map((c) => (c.id === saved.id ? saved : c)) : [...prev, saved];
     });
+    invalidateAppData();
     setShowCreate(false);
     setEditingCategory(null);
   };
@@ -68,6 +70,7 @@ export default function SubcategoriesPage() {
       const { error } = await supabase.from('categories').delete().eq('id', category.id);
       if (error) throw error;
       setSubcategories((prev) => prev.filter((c) => c.id !== category.id));
+      invalidateAppData();
       setActionSheet(null);
     } catch {
       setDeleteError(

@@ -7,6 +7,10 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   themeColor: "#0f172a",
+  // Sin esto, en Android el teclado (y su barra de sugerencias) se dibuja
+  // por encima del contenido en vez de achicar el viewport, tapando los
+  // botones fijados al fondo de pantalla (bottom sheets, formularios).
+  interactiveWidget: "resizes-content",
 };
 
 export const metadata: Metadata = {

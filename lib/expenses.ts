@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { Expense } from './types';
 import { calculateAmountsInBothCurrencies } from './exchange-rates';
+import { invalidateAppData } from './app-data';
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
@@ -35,12 +36,14 @@ export async function settleSharedExpense(expense: Expense): Promise<Expense> {
     .single();
 
   if (error) throw error;
+  invalidateAppData();
   return data;
 }
 
 export async function deleteExpense(id: string): Promise<void> {
   const { error } = await supabase.from('expenses').delete().eq('id', id);
   if (error) throw error;
+  invalidateAppData();
 }
 
 /**

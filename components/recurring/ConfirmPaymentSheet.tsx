@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { Expense, RecurringExpense } from '@/lib/types';
 import { tryCalculateAmountsInBothCurrencies } from '@/lib/exchange-rates';
+import { invalidateAppData } from '@/lib/app-data';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { MoneyInput } from '@/components/ui/MoneyInput';
 import { format } from 'date-fns';
@@ -65,6 +66,7 @@ export function ConfirmPaymentSheet({ recurring, onClose, onPaid }: ConfirmPayme
         .single();
       if (dbError) throw dbError;
 
+      invalidateAppData();
       onPaid(created);
     } catch (err) {
       console.error(err);
