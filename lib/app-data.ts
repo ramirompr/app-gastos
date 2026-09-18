@@ -329,6 +329,14 @@ export function prefetchAppData(userId: string) {
  * dispara el fetch correspondiente igual: si no había nada, `loading` arranca
  * en true y se resuelve solo; si ya había, el estado no cambia hasta que la
  * promesa resuelva (nunca vuelve a `loading`, evita el parpadeo).
+ *
+ * Además revalida en segundo plano cada vez que la pestaña/app vuelve a
+ * primer plano: sin eso, una sesión que quedó en memoria mientras el celular
+ * estaba en background (o mientras se editó lo mismo desde otro
+ * dispositivo/pestaña) sigue mostrando para siempre los datos con los que se
+ * cargó, porque el cache sólo se invalida cuando ESTA sesión hace un
+ * alta/edición/baja. La revalidación no togglea `loading` ni pisa `data`
+ * hasta tener la respuesta nueva, para no parpadear con un skeleton.
  */
 export function useCachedResource<T>(
   peek: () => T | null,
@@ -359,6 +367,26 @@ export function useCachedResource<T>(
     }
     return () => {
       cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+
+  useEffect(() => {
+    let cancelled = false;
+    const revalidate = () => {
+      if (document.visibilityState !== 'visible') return;
+      invalidateAppData();
+      const promise = fetcher();
+      if (promise) {
+        promise.then((result) => {
+          if (!cancelled) setData(result);
+        });
+      }
+    };
+    document.addEventListener('visibilitychange', revalidate);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', revalidate);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);

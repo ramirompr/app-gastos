@@ -93,14 +93,15 @@ export default function RecurringExpensesPage() {
         ? confirmedWithoutExpense.some((c) => c.recurring_expense_id === r.id)
         : false;
       const isPaid = !!confirmedExpense || confirmedNoExpense;
-      const isOverdue = dueThisMonth && !isPaid && r.day_of_month <= currentDay;
-      return { recurring: r, confirmedExpense, isPaid, isOverdue, dueThisMonth };
+      const isOverdue = dueThisMonth && !isPaid && r.day_of_month < currentDay;
+      const isDueToday = dueThisMonth && !isPaid && r.day_of_month === currentDay;
+      return { recurring: r, confirmedExpense, isPaid, isOverdue, isDueToday, dueThisMonth };
     });
-    // Semáforo: vencidos primero, después pendientes, pagados, y al final los
-    // que este mes no corresponden por su frecuencia; cada grupo ordenado
-    // por día de cobro.
+    // Semáforo: vencidos primero, después los que vencen hoy, pendientes,
+    // pagados, y al final los que este mes no corresponden por su
+    // frecuencia; cada grupo ordenado por día de cobro.
     const statusRank = (s: (typeof withStatus)[number]) =>
-      !s.dueThisMonth ? 3 : s.isOverdue ? 0 : s.isPaid ? 2 : 1;
+      !s.dueThisMonth ? 4 : s.isOverdue ? 0 : s.isDueToday ? 1 : s.isPaid ? 3 : 2;
     return withStatus.sort((a, b) => {
       const rankDiff = statusRank(a) - statusRank(b);
       return rankDiff !== 0 ? rankDiff : a.recurring.day_of_month - b.recurring.day_of_month;
@@ -160,7 +161,7 @@ export default function RecurringExpensesPage() {
             No tenés gastos recurrentes cargados. Tocá el + para agregar uno.
           </p>
         )}
-        {statuses.map(({ recurring, confirmedExpense, isPaid, isOverdue, dueThisMonth }) => {
+        {statuses.map(({ recurring, confirmedExpense, isPaid, isOverdue, isDueToday, dueThisMonth }) => {
           const cat = categories.find((c) => c.id === recurring.category_id);
           const topCat = getTopLevelCategory(categories, recurring.category_id);
           const displayCurrency = showUsd ? 'USD' : 'ARS';
@@ -169,17 +170,27 @@ export default function RecurringExpensesPage() {
             !needsConversion || todayRate !== null
               ? convertWithRate(recurring.default_amount, recurring.currency, displayCurrency, todayRate ?? 1)
               : null;
-          const statusColor = !dueThisMonth ? 'slate' : isPaid ? 'emerald' : isOverdue ? 'red' : 'amber';
+          const statusColor = !dueThisMonth
+            ? 'slate'
+            : isPaid
+            ? 'emerald'
+            : isOverdue
+            ? 'red'
+            : isDueToday
+            ? 'orange'
+            : 'amber';
           const cardClass = {
             slate: 'bg-slate-800/40 border-slate-700/50',
             emerald: 'bg-emerald-500/10 border-emerald-500/30',
             red: 'bg-red-500/10 border-red-500/30',
+            orange: 'bg-orange-400/10 border-orange-400/30',
             amber: 'bg-amber-400/10 border-amber-400/30',
           }[statusColor];
           const textClass = {
             slate: 'text-slate-500',
             emerald: 'text-emerald-400',
             red: 'text-red-400',
+            orange: 'text-orange-400',
             amber: 'text-amber-400',
           }[statusColor];
           return (
@@ -211,6 +222,8 @@ export default function RecurringExpensesPage() {
                       : 'Pagado'
                     : isOverdue
                     ? 'Vencido'
+                    : isDueToday
+                    ? 'Vence hoy'
                     : 'Pendiente'}
                 </p>
               </div>

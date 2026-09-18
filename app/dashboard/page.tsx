@@ -37,9 +37,11 @@ import {
 } from '@/lib/date-periods';
 import { format } from 'date-fns';
 
+type DueStatus = 'overdue' | 'dueToday' | 'pending';
+
 interface RecurringStatus {
   recurring: RecurringExpense;
-  isOverdue: boolean;
+  status: DueStatus;
 }
 
 const PERIOD_TABS: { value: Period; label: string }[] = [
@@ -149,16 +151,18 @@ export default function DashboardPage() {
       ...recurringData.confirmedWithoutExpense.map((c) => c.recurring_expense_id),
     ]);
     const currentDay = new Date().getDate();
+    const statusRank: Record<DueStatus, number> = { overdue: 0, dueToday: 1, pending: 2 };
     return recurringData.recurrings
       .filter((r) => isRecurringDueInMonth(r) && !confirmedIds.has(r.id))
-      .map((r) => ({ recurring: r, isOverdue: r.day_of_month <= currentDay }))
-      .sort((a, b) =>
-        a.isOverdue === b.isOverdue
-          ? a.recurring.day_of_month - b.recurring.day_of_month
-          : a.isOverdue
-          ? -1
-          : 1
-      );
+      .map((r) => ({
+        recurring: r,
+        status: (r.day_of_month < currentDay
+          ? 'overdue'
+          : r.day_of_month === currentDay
+          ? 'dueToday'
+          : 'pending') as DueStatus,
+      }))
+      .sort((a, b) => statusRank[a.status] - statusRank[b.status] || a.recurring.day_of_month - b.recurring.day_of_month);
   }, [recurringData]);
 
   const pendingCount = useMemo(
@@ -362,7 +366,7 @@ export default function DashboardPage() {
           <p className="text-slate-500 text-xs uppercase tracking-wider font-semibold px-1">
             Recurrentes de este mes
           </p>
-          {recurringStatuses.map(({ recurring, isOverdue }) => {
+          {recurringStatuses.map(({ recurring, status }) => {
             const cat = categories.find((c) => c.id === recurring.category_id);
             const topCat = getTopLevelCategory(categories, recurring.category_id);
             const displayCurrency = showUsd ? 'USD' : 'ARS';
@@ -371,15 +375,26 @@ export default function DashboardPage() {
               !needsConversion || recurringData?.rate != null
                 ? convertWithRate(recurring.default_amount, recurring.currency, displayCurrency, recurringData?.rate ?? 1)
                 : null;
+            const cardClass = {
+              overdue: 'bg-red-500/10 border-red-500/30 hover:bg-red-500/15',
+              dueToday: 'bg-orange-400/10 border-orange-400/30 hover:bg-orange-400/15',
+              pending: 'bg-amber-400/10 border-amber-400/30 hover:bg-amber-400/15',
+            }[status];
+            const textClass = {
+              overdue: 'text-red-400',
+              dueToday: 'text-orange-400',
+              pending: 'text-amber-400',
+            }[status];
+            const label = {
+              overdue: 'Vencido',
+              dueToday: 'Vence hoy',
+              pending: 'Pendiente',
+            }[status];
             return (
               <div
                 key={recurring.id}
                 onClick={() => router.push('/dashboard/recurring')}
-                className={`flex items-center gap-3 rounded-xl px-4 py-3 cursor-pointer active:scale-[0.98] transition-all border ${
-                  isOverdue
-                    ? 'bg-red-500/10 border-red-500/30 hover:bg-red-500/15'
-                    : 'bg-amber-400/10 border-amber-400/30 hover:bg-amber-400/15'
-                }`}
+                className={`flex items-center gap-3 rounded-xl px-4 py-3 cursor-pointer active:scale-[0.98] transition-all border ${cardClass}`}
               >
                 {topCat && (
                   <div
@@ -394,8 +409,8 @@ export default function DashboardPage() {
                   <p className="text-slate-500 text-xs mt-0.5 truncate">
                     {cat && (cat.parent_id ? `${topCat?.name} › ${cat.name}` : cat.name)}
                   </p>
-                  <p className={`text-xs mt-0.5 font-medium ${isOverdue ? 'text-red-400' : 'text-amber-400'}`}>
-                    {isOverdue ? 'Vencido' : 'Pendiente'} · día {recurring.day_of_month}
+                  <p className={`text-xs mt-0.5 font-medium ${textClass}`}>
+                    {label} · día {recurring.day_of_month}
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-1">
