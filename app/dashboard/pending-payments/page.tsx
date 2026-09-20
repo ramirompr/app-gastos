@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { Expense } from '@/lib/types';
 import { Emoji } from '@/components/ui/Emoji';
-import { settleSharedExpense } from '@/lib/expenses';
+import { SettlePaymentSheet } from '@/components/expenses/SettlePaymentSheet';
 import { useCurrencyDisplay } from '@/lib/currency-display-context';
 import { pickAmount, formatMoney, formatExpenseAmount, formatPartnerShare, partnerShareInArsUsd } from '@/lib/format-money';
 import {
@@ -27,8 +27,7 @@ export default function PendingPaymentsPage() {
   const { user, loading: authLoading } = useAuth();
   const { showUsd } = useCurrencyDisplay();
 
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
-  const [settleError, setSettleError] = useState<{ id: string; message: string } | null>(null);
+  const [settlingExpense, setSettlingExpense] = useState<Expense | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   // Gastos saldados en esta sesión, para sacarlos de la lista al instante sin
   // esperar el refetch (el cache ya quedó invalidado por settleSharedExpense).
@@ -51,22 +50,6 @@ export default function PendingPaymentsPage() {
   const categories = cachedCategories ?? [];
   const expenses = (cachedExpenses ?? []).filter((e) => !settledIds.has(e.id));
   const loading = loadingCategories || loadingExpenses;
-
-  const markSettled = async (expense: Expense) => {
-    setUpdatingId(expense.id);
-    setSettleError(null);
-    try {
-      await settleSharedExpense(expense);
-      setSettledIds((prev) => new Set(prev).add(expense.id));
-    } catch (err) {
-      console.error(err);
-      setSettleError({
-        id: expense.id,
-        message: err instanceof Error ? err.message : 'No se pudo marcar como pagado. Intentá de nuevo.',
-      });
-    }
-    setUpdatingId(null);
-  };
 
   if (authLoading) {
     return (
@@ -137,23 +120,31 @@ export default function PendingPaymentsPage() {
                   {exp.shared_with && (
                     <p className="text-xs text-slate-500 mt-0.5">{exp.shared_with}</p>
                   )}
-                  {settleError?.id === exp.id && (
-                    <p className="text-xs text-red-400 mt-0.5">{settleError.message}</p>
-                  )}
                 </div>
                 <button
-                  onClick={() => markSettled(exp)}
-                  disabled={updatingId === exp.id || isPending}
+                  onClick={() => setSettlingExpense(exp)}
+                  disabled={isPending}
                   title={isPending ? 'Esperá a que se resuelva la cotización pendiente' : undefined}
                   className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 disabled:opacity-50"
                 >
-                  {updatingId === exp.id ? 'Guardando...' : 'Marcar como pagado'}
+                  Marcar como pagado
                 </button>
               </div>
             </div>
           );
         })}
       </Container>
+
+      {settlingExpense && (
+        <SettlePaymentSheet
+          expense={settlingExpense}
+          onClose={() => setSettlingExpense(null)}
+          onSettled={() => {
+            setSettledIds((prev) => new Set(prev).add(settlingExpense.id));
+            setSettlingExpense(null);
+          }}
+        />
+      )}
 
       <AppMenu open={menuOpen} onClose={() => setMenuOpen(false)} />
     </div>

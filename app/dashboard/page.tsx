@@ -8,7 +8,7 @@ import { getTopLevelCategory } from '@/lib/categories';
 import { Emoji } from '@/components/ui/Emoji';
 import { Container } from '@/components/layout/Container';
 import { useCurrencyDisplay } from '@/lib/currency-display-context';
-import { pickAmount, formatMoney } from '@/lib/format-money';
+import { pickAmount, formatMoney, formatPartnerShare } from '@/lib/format-money';
 import { resolvePendingExchangeRates } from '@/lib/expenses';
 import { convertWithRate } from '@/lib/exchange-rates';
 import { isRecurringDueInMonth } from '@/lib/recurring';
@@ -19,11 +19,14 @@ import {
   getHomeRangeCached,
   peekRecurring,
   getRecurringCached,
+  peekPendingPayments,
+  getPendingPaymentsCached,
   useCachedResource,
   invalidateAppData,
   prefetchAppData,
 } from '@/lib/app-data';
 import { ConfirmPaymentSheet } from '@/components/recurring/ConfirmPaymentSheet';
+import { SettlePaymentSheet } from '@/components/expenses/SettlePaymentSheet';
 import { DonutChart } from '@/components/dashboard/DonutChart';
 import { AppMenu } from '@/components/layout/AppMenu';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -62,6 +65,10 @@ export default function DashboardPage() {
   const [customEnd, setCustomEnd] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [menuOpen, setMenuOpen] = useState(false);
   const [payingRecurring, setPayingRecurring] = useState<RecurringExpense | null>(null);
+  const [settlingExpense, setSettlingExpense] = useState<Expense | null>(null);
+  // Pagos pendientes saldados en esta sesión, para sacarlos de la columna al
+  // instante sin esperar el refetch (el cache ya quedó invalidado).
+  const [settledIds, setSettledIds] = useState<Set<string>>(new Set());
 
   // Se incrementa cuando se resuelven cotizaciones que estaban pendientes,
   // para forzar un refetch de categorías/gastos (invalidamos el cache justo
@@ -144,6 +151,13 @@ export default function DashboardPage() {
     [user?.id, refreshTick]
   );
 
+  const { data: pendingPaymentsData } = useCachedResource(
+    peekPendingPayments,
+    () => (user ? getPendingPaymentsCached(user.id) : null),
+    [user?.id, refreshTick]
+  );
+  const pendingPayments = (pendingPaymentsData ?? []).filter((e) => !settledIds.has(e.id));
+
   const recurringStatuses = useMemo<RecurringStatus[]>(() => {
     if (!recurringData) return [];
     const confirmedIds = new Set([
@@ -166,13 +180,14 @@ export default function DashboardPage() {
   }, [recurringData]);
 
   const pendingCount = useMemo(
-    () => expenses.filter((e: Expense) => e.exchange_rate_used == null).length,
+    () => expenses.filter((e: Expense) => e.type !== 'income' && e.exchange_rate_used == null).length,
     [expenses]
   );
 
   const breakdown = useMemo(() => {
     const totals = new Map<string, { ars: number; usd: number }>();
     for (const exp of expenses) {
+      if (exp.type === 'income') continue;
       const top = getTopLevelCategory(categories, exp.category_id);
       if (!top) continue;
       const prev = totals.get(top.id) ?? { ars: 0, usd: 0 };
@@ -196,6 +211,19 @@ export default function DashboardPage() {
   }, [expenses, categories, showUsd]);
 
   const total = breakdown.reduce((sum, b) => sum + b.amount, 0);
+
+  const totalIncome = useMemo(() => {
+    let ars = 0;
+    let usd = 0;
+    for (const exp of expenses) {
+      if (exp.type !== 'income') continue;
+      ars += exp.amount_ars ?? 0;
+      usd += exp.amount_usd ?? 0;
+    }
+    return pickAmount(ars, usd, showUsd);
+  }, [expenses, showUsd]);
+
+  const netBalance = totalIncome - total;
 
   const handlePrev = () => setAnchor((a) => shiftAnchor(period, a, -1));
   const handleNext = () => {
@@ -311,13 +339,13 @@ export default function DashboardPage() {
         ) : (
           <DonutChart
             slices={breakdown.map((b) => ({ color: b.category.color, value: b.amount }))}
-            centerLabel={formatMoney(total, showUsd)}
+            centerLabel={formatMoney(Math.abs(netBalance), showUsd)}
             onAddClick={() => router.push('/dashboard/expenses/new')}
           />
         )}
       </div>
 
-      {/* Category breakdown */}
+      {/* Desglose por categoría */}
       <Container className="flex flex-col gap-3">
         {!hasLoadedOnce ? (
           <SkeletonList count={4} />
@@ -340,7 +368,7 @@ export default function DashboardPage() {
                 key={category.id}
                 onClick={() =>
                   router.push(
-                    `/dashboard/expenses?categoryId=${category.id}&start=${format(range.start, 'yyyy-MM-dd')}&end=${format(range.end, 'yyyy-MM-dd')}`
+                    `/dashboard/expenses?categoryId=${category.id}&start=${format(range.start, 'yyyy-MM-dd')}&end=${format(range.end, 'yyyy-MM-dd')}&type=expense`
                   )
                 }
                 className="flex items-center gap-3 bg-slate-800/60 rounded-xl px-4 py-3 cursor-pointer hover:bg-slate-800 active:scale-[0.98] transition-all"
@@ -360,9 +388,60 @@ export default function DashboardPage() {
         )}
       </Container>
 
-      {/* Gastos recurrentes de este mes, sin confirmar todavía */}
-      {recurringStatuses.length > 0 && (
-        <Container className="flex flex-col gap-3 mt-6">
+      {/* Pagos pendientes y recurrentes de este mes, en dos columnas */}
+      {(recurringStatuses.length > 0 || pendingPayments.length > 0) && (
+        <Container className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+          {pendingPayments.length > 0 && (
+          <div className="flex flex-col gap-3">
+            <p className="text-slate-500 text-xs uppercase tracking-wider font-semibold px-1">
+              Pagos pendientes
+            </p>
+            {pendingPayments.map((exp) => {
+              const cat = categories.find((c) => c.id === exp.category_id);
+              const topCat = getTopLevelCategory(categories, exp.category_id);
+              const isPending = exp.exchange_rate_used == null;
+              return (
+                <div
+                  key={exp.id}
+                  onClick={() => router.push('/dashboard/pending-payments')}
+                  className="flex items-center gap-3 rounded-xl px-4 py-3 cursor-pointer active:scale-[0.98] transition-all bg-slate-800/60 hover:bg-slate-800"
+                >
+                  {topCat && (
+                    <div
+                      className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+                      style={{ backgroundColor: topCat.color }}
+                    >
+                      <Emoji emoji={topCat.icon} size={16} />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-sm font-medium truncate">{exp.description}</p>
+                    <p className="text-slate-500 text-xs mt-0.5 truncate">
+                      {cat && (cat.parent_id ? `${topCat?.name} › ${cat.name}` : cat.name)}
+                    </p>
+                    <p className="text-xs mt-0.5 font-medium text-amber-400">
+                      Te deben {formatPartnerShare(exp, showUsd)}
+                    </p>
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSettlingExpense(exp);
+                    }}
+                    disabled={isPending}
+                    title={isPending ? 'Esperá a que se resuelva la cotización pendiente' : undefined}
+                    className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 disabled:opacity-50 whitespace-nowrap"
+                  >
+                    Pagar
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+          )}
+
+          {recurringStatuses.length > 0 && (
+          <div className="flex flex-col gap-3">
           <p className="text-slate-500 text-xs uppercase tracking-wider font-semibold px-1">
             Recurrentes de este mes
           </p>
@@ -430,7 +509,20 @@ export default function DashboardPage() {
               </div>
             );
           })}
+          </div>
+          )}
         </Container>
+      )}
+
+      {settlingExpense && (
+        <SettlePaymentSheet
+          expense={settlingExpense}
+          onClose={() => setSettlingExpense(null)}
+          onSettled={() => {
+            setSettledIds((prev) => new Set(prev).add(settlingExpense.id));
+            setSettlingExpense(null);
+          }}
+        />
       )}
 
       {payingRecurring && (

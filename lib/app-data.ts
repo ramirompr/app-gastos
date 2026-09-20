@@ -173,6 +173,7 @@ export function getAnalysisRangeCached(userId: string, numMonths: number): Promi
         .from('expenses')
         .select('*')
         .eq('user_id', userId)
+        .eq('type', 'expense')
         .gte('date', format(analysisRangeStart(numMonths), 'yyyy-MM-dd'));
       return data ?? [];
     }

@@ -24,7 +24,7 @@ const MENU_ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
   { href: '/dashboard', label: 'Home', icon: Home },
   { href: '/dashboard/categories', label: 'Categorías', icon: Tags },
   { href: '/dashboard/analysis', label: 'Análisis', icon: BarChart3 },
-  { href: '/dashboard/history', label: 'Historial de gastos', icon: Receipt },
+  { href: '/dashboard/history', label: 'Historial de movimientos', icon: Receipt },
   { href: '/dashboard/pending-installments', label: 'Cuotas pendientes', icon: CalendarClock },
   { href: '/dashboard/recurring', label: 'Gastos recurrentes', icon: Repeat },
   { href: '/dashboard/pending-payments', label: 'Pagos pendientes', icon: HandCoins },

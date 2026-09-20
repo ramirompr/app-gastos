@@ -6,7 +6,8 @@ import { useAuth } from '@/lib/auth-context';
 import { Category, Expense, ExpenseInstallmentPlan } from '@/lib/types';
 import { Emoji } from '@/components/ui/Emoji';
 import { ChevronUp, ChevronDown, Repeat } from 'lucide-react';
-import { settleSharedExpense, deleteExpense } from '@/lib/expenses';
+import { deleteExpense } from '@/lib/expenses';
+import { SettlePaymentSheet } from '@/components/expenses/SettlePaymentSheet';
 import { useCurrencyDisplay } from '@/lib/currency-display-context';
 import { pickAmount, formatMoney, formatExpenseAmount, formatPartnerShare } from '@/lib/format-money';
 import {
@@ -36,7 +37,7 @@ export default function HistoryPage() {
   const { showUsd } = useCurrencyDisplay();
 
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [settlingExpense, setSettlingExpense] = useState<Expense | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [expandedPlanId, setExpandedPlanId] = useState<string | null>(null);
 
@@ -89,25 +90,14 @@ export default function HistoryPage() {
 
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
 
-  const markSettled = async (expense: Expense) => {
-    setUpdatingId(expense.id);
-    setRowError(null);
-    try {
-      const updated = await settleSharedExpense(expense);
-      setLocalPlainExpenses((prev) =>
-        (prev ?? cachedHistory?.plainExpenses ?? []).map((e) => (e.id === expense.id ? updated : e))
-      );
-      setLocalInstallmentExpenses((prev) =>
-        (prev ?? cachedHistory?.installmentExpenses ?? []).map((e) => (e.id === expense.id ? updated : e))
-      );
-    } catch (err) {
-      console.error(err);
-      setRowError({
-        id: expense.id,
-        message: err instanceof Error ? err.message : 'No se pudo marcar como pagado. Intentá de nuevo.',
-      });
-    }
-    setUpdatingId(null);
+  const applySettled = (updated: Expense) => {
+    setLocalPlainExpenses((prev) =>
+      (prev ?? cachedHistory?.plainExpenses ?? []).map((e) => (e.id === updated.id ? updated : e))
+    );
+    setLocalInstallmentExpenses((prev) =>
+      (prev ?? cachedHistory?.installmentExpenses ?? []).map((e) => (e.id === updated.id ? updated : e))
+    );
+    setSettlingExpense(null);
   };
 
   const handleDeleteExpense = async (id: string) => {
@@ -142,7 +132,7 @@ export default function HistoryPage() {
       <Container className="flex flex-col gap-3">
         {loading && <SkeletonList count={6} />}
         {!loading && items.length === 0 && (
-          <p className="text-center text-slate-500 text-sm py-16">No hay gastos cargados todavía.</p>
+          <p className="text-center text-slate-500 text-sm py-16">No hay movimientos cargados todavía.</p>
         )}
 
         {visibleItems.map((item) => {
@@ -154,11 +144,10 @@ export default function HistoryPage() {
                 expense={item.expense}
                 category={cat}
                 showUsd={showUsd}
-                updatingId={updatingId}
                 errorMessage={rowError?.id === item.expense.id ? rowError.message : null}
                 onEdit={() => router.push(`/dashboard/expenses/${item.expense.id}/edit`)}
                 onDelete={() => handleDeleteExpense(item.expense.id)}
-                onSettle={() => markSettled(item.expense)}
+                onSettle={() => setSettlingExpense(item.expense)}
               />
             );
           }
@@ -209,11 +198,10 @@ export default function HistoryPage() {
                       expense={exp}
                       category={cat}
                       showUsd={showUsd}
-                      updatingId={updatingId}
                       errorMessage={rowError?.id === exp.id ? rowError.message : null}
                       onEdit={() => router.push(`/dashboard/expenses/${exp.id}/edit`)}
                       onDelete={() => handleDeleteExpense(exp.id)}
-                      onSettle={() => markSettled(exp)}
+                      onSettle={() => setSettlingExpense(exp)}
                     />
                   ))}
                 </div>
@@ -232,6 +220,14 @@ export default function HistoryPage() {
         )}
       </Container>
 
+      {settlingExpense && (
+        <SettlePaymentSheet
+          expense={settlingExpense}
+          onClose={() => setSettlingExpense(null)}
+          onSettled={applySettled}
+        />
+      )}
+
       <AppMenu open={menuOpen} onClose={() => setMenuOpen(false)} />
     </div>
   );
@@ -241,7 +237,6 @@ interface ExpenseRowProps {
   expense: Expense;
   category?: Category;
   showUsd: boolean;
-  updatingId: string | null;
   errorMessage?: string | null;
   onEdit: () => void;
   onDelete: () => Promise<void>;
@@ -252,13 +247,13 @@ function ExpenseRow({
   expense,
   category,
   showUsd,
-  updatingId,
   errorMessage,
   onEdit,
   onDelete,
   onSettle,
 }: ExpenseRowProps) {
   const isPending = expense.exchange_rate_used == null;
+  const isIncome = expense.type === 'income';
 
   return (
     <div className="bg-slate-800/60 rounded-xl px-4 py-3 flex flex-col gap-2">
@@ -278,7 +273,12 @@ function ExpenseRow({
             {category ? ` · ${category.name}` : ''}
           </p>
         </div>
-        <p className="text-white text-sm font-semibold whitespace-nowrap">
+        <p
+          className={`text-sm font-semibold whitespace-nowrap ${
+            isIncome ? 'text-emerald-400' : 'text-white'
+          }`}
+        >
+          {isIncome && !isPending ? '+' : ''}
           {formatExpenseAmount(expense, showUsd)}
         </p>
         <ExpenseRowMenu label={expense.description} onEdit={onEdit} onDelete={onDelete} />
@@ -299,11 +299,11 @@ function ExpenseRow({
           {!expense.is_settled && (
             <button
               onClick={onSettle}
-              disabled={updatingId === expense.id || isPending}
+              disabled={isPending}
               title={isPending ? 'Esperá a que se resuelva la cotización pendiente' : undefined}
               className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 disabled:opacity-50"
             >
-              {updatingId === expense.id ? 'Guardando...' : 'Marcar como pagado'}
+              Marcar como pagado
             </button>
           )}
         </div>

@@ -42,6 +42,7 @@ export type Database = {
           amount_usd: number | null;
           exchange_rate_used: number | null;
           date: string;
+          type: 'expense' | 'income';
           split_type: 'personal' | 'invited' | 'shared';
           partner_share: number | null;
           shared_with: string | null;
@@ -63,6 +64,7 @@ export type Database = {
           amount_usd: number | null;
           exchange_rate_used: number | null;
           date: string;
+          type?: 'expense' | 'income';
           split_type: 'personal' | 'invited' | 'shared';
           partner_share?: number | null;
           shared_with?: string | null;
@@ -84,6 +86,7 @@ export type Database = {
           amount_usd?: number | null;
           exchange_rate_used?: number | null;
           date?: string;
+          type?: 'expense' | 'income';
           split_type?: 'personal' | 'invited' | 'shared';
           partner_share?: number | null;
           shared_with?: string | null;

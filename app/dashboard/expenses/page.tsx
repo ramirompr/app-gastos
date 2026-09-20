@@ -5,7 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { Category, Expense } from '@/lib/types';
-import { settleSharedExpense, deleteExpense } from '@/lib/expenses';
+import { deleteExpense } from '@/lib/expenses';
+import { SettlePaymentSheet } from '@/components/expenses/SettlePaymentSheet';
 import { useCurrencyDisplay } from '@/lib/currency-display-context';
 import { pickAmount, formatMoney, formatExpenseAmount, formatPartnerShare, partnerShareInArsUsd } from '@/lib/format-money';
 import { AppMenu } from '@/components/layout/AppMenu';
@@ -34,13 +35,14 @@ function ExpensesListContent() {
   const categoryId = searchParams.get('categoryId');
   const start = searchParams.get('start');
   const end = searchParams.get('end');
+  const type = (searchParams.get('type') as 'expense' | 'income' | null) ?? 'expense';
+  const isIncome = type === 'income';
 
   const [category, setCategory] = useState<Category | null>(null);
   const [subcategories, setSubcategories] = useState<Category[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
-  const [settleError, setSettleError] = useState<{ id: string; message: string } | null>(null);
+  const [settlingExpense, setSettlingExpense] = useState<Expense | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -63,6 +65,7 @@ function ExpensesListContent() {
       .from('expenses')
       .select('*')
       .eq('user_id', user.id)
+      .eq('type', type)
       .in('category_id', categoryIds)
       .gte('date', start)
       .lte('date', end)
@@ -70,27 +73,11 @@ function ExpensesListContent() {
       .order('created_at', { ascending: false });
     setExpenses(exps ?? []);
     setLoading(false);
-  }, [user, categoryId, start, end]);
+  }, [user, categoryId, start, end, type]);
 
   useEffect(() => {
     if (user) fetchData();
   }, [user, fetchData]);
-
-  const markSettled = async (expense: Expense) => {
-    setUpdatingId(expense.id);
-    setSettleError(null);
-    try {
-      const updated = await settleSharedExpense(expense);
-      setExpenses((prev) => prev.map((e) => (e.id === expense.id ? updated : e)));
-    } catch (err) {
-      console.error(err);
-      setSettleError({
-        id: expense.id,
-        message: err instanceof Error ? err.message : 'No se pudo marcar como pagado. Intentá de nuevo.',
-      });
-    }
-    setUpdatingId(null);
-  };
 
   if (authLoading || loading) {
     return (
@@ -146,7 +133,11 @@ function ExpensesListContent() {
 
   return (
     <div className="min-h-screen bg-slate-950 pb-16">
-      <PageHeader title="Gastos" onBack={() => router.push('/dashboard')} onMenu={() => setMenuOpen(true)} />
+      <PageHeader
+        title={isIncome ? 'Ingresos' : 'Gastos'}
+        onBack={() => router.push('/dashboard')}
+        onMenu={() => setMenuOpen(true)}
+      />
       <Container className="pb-4">
         <div className="flex items-center gap-4 justify-center">
           <div
@@ -158,7 +149,8 @@ function ExpensesListContent() {
           <div>
             <p className="text-white font-semibold">{category.name}</p>
             <p className="text-slate-500 text-sm">
-              {expenses.length} {expenses.length === 1 ? 'gasto' : 'gastos'} · {formatMoney(total, showUsd)}
+              {expenses.length} {expenses.length === 1 ? (isIncome ? 'ingreso' : 'gasto') : (isIncome ? 'ingresos' : 'gastos')} ·{' '}
+              {formatMoney(total, showUsd)}
             </p>
             {totalInvited > 0 && (
               <p className="text-slate-500 text-xs mt-0.5">
@@ -180,14 +172,14 @@ function ExpensesListContent() {
       <Container className="flex flex-col gap-3">
         {pendingCount > 0 && (
           <p className="text-amber-400 text-xs text-center bg-amber-400/10 rounded-lg px-3 py-2">
-            {pendingCount} {pendingCount === 1 ? 'gasto' : 'gastos'} con cotización del dólar
-            pendiente — no {pendingCount === 1 ? 'está incluido' : 'están incluidos'} en el total
-            todavía.
+            {pendingCount} {pendingCount === 1 ? (isIncome ? 'ingreso' : 'gasto') : (isIncome ? 'ingresos' : 'gastos')} con
+            cotización del dólar pendiente — no {pendingCount === 1 ? 'está incluido' : 'están incluidos'} en
+            el total todavía.
           </p>
         )}
         {expenses.length === 0 && (
           <p className="text-center text-slate-500 text-sm py-16">
-            No hay gastos en esta categoría durante este período.
+            No hay {isIncome ? 'ingresos' : 'gastos'} en esta categoría durante este período.
           </p>
         )}
 
@@ -203,7 +195,7 @@ function ExpensesListContent() {
                   </div>
                   <p className="text-white text-sm font-semibold flex-1 truncate">{group.label}</p>
                   <p className="text-slate-500 text-xs whitespace-nowrap">
-                    {group.count} {group.count === 1 ? 'gasto' : 'gastos'}
+                    {group.count} {group.count === 1 ? (isIncome ? 'ingreso' : 'gasto') : (isIncome ? 'ingresos' : 'gastos')}
                   </p>
                   <p className="text-white text-sm font-semibold whitespace-nowrap">
                     {formatMoney(group.amount, showUsd)}
@@ -214,14 +206,12 @@ function ExpensesListContent() {
                     key={exp.id}
                     exp={exp}
                     showUsd={showUsd}
-                    updatingId={updatingId}
-                    settleError={settleError}
                     onEdit={() => router.push(`/dashboard/expenses/${exp.id}/edit`)}
                     onDelete={async () => {
                       await deleteExpense(exp.id);
                       setExpenses((prev) => prev.filter((e) => e.id !== exp.id));
                     }}
-                    onSettle={() => markSettled(exp)}
+                    onSettle={() => setSettlingExpense(exp)}
                   />
                 ))}
               </div>
@@ -231,17 +221,26 @@ function ExpensesListContent() {
                 key={exp.id}
                 exp={exp}
                 showUsd={showUsd}
-                updatingId={updatingId}
-                settleError={settleError}
                 onEdit={() => router.push(`/dashboard/expenses/${exp.id}/edit`)}
                 onDelete={async () => {
                   await deleteExpense(exp.id);
                   setExpenses((prev) => prev.filter((e) => e.id !== exp.id));
                 }}
-                onSettle={() => markSettled(exp)}
+                onSettle={() => setSettlingExpense(exp)}
               />
             ))}
       </Container>
+
+      {settlingExpense && (
+        <SettlePaymentSheet
+          expense={settlingExpense}
+          onClose={() => setSettlingExpense(null)}
+          onSettled={(updated) => {
+            setExpenses((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
+            setSettlingExpense(null);
+          }}
+        />
+      )}
 
       <AppMenu open={menuOpen} onClose={() => setMenuOpen(false)} />
     </div>
@@ -251,15 +250,14 @@ function ExpensesListContent() {
 interface ExpenseCardProps {
   exp: Expense;
   showUsd: boolean;
-  updatingId: string | null;
-  settleError: { id: string; message: string } | null;
   onEdit: () => void;
   onDelete: () => Promise<void>;
   onSettle: () => void;
 }
 
-function ExpenseCard({ exp, showUsd, updatingId, settleError, onEdit, onDelete, onSettle }: ExpenseCardProps) {
+function ExpenseCard({ exp, showUsd, onEdit, onDelete, onSettle }: ExpenseCardProps) {
   const isPending = exp.exchange_rate_used == null;
+  const isIncome = exp.type === 'income';
 
   return (
     <div className="bg-slate-800/60 rounded-xl px-4 py-3 flex flex-col gap-2">
@@ -270,7 +268,12 @@ function ExpenseCard({ exp, showUsd, updatingId, settleError, onEdit, onDelete, 
             {format(new Date(`${exp.date}T00:00:00`), "d 'de' MMMM", { locale: es })}
           </p>
         </div>
-        <p className="text-white text-sm font-semibold whitespace-nowrap">
+        <p
+          className={`text-sm font-semibold whitespace-nowrap ${
+            isIncome ? 'text-emerald-400' : 'text-white'
+          }`}
+        >
+          {isIncome && !isPending ? '+' : ''}
           {formatExpenseAmount(exp, showUsd)}
         </p>
         <ExpenseRowMenu label={exp.description} onEdit={onEdit} onDelete={onDelete} />
@@ -284,18 +287,15 @@ function ExpenseCard({ exp, showUsd, updatingId, settleError, onEdit, onDelete, 
               {formatPartnerShare(exp, showUsd)}
             </p>
             {exp.shared_with && <p className="text-xs text-slate-500 mt-0.5">{exp.shared_with}</p>}
-            {settleError?.id === exp.id && (
-              <p className="text-xs text-red-400 mt-0.5">{settleError.message}</p>
-            )}
           </div>
           {!exp.is_settled && (
             <button
               onClick={onSettle}
-              disabled={updatingId === exp.id || isPending}
+              disabled={isPending}
               title={isPending ? 'Esperá a que se resuelva la cotización pendiente' : undefined}
               className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 disabled:opacity-50"
             >
-              {updatingId === exp.id ? 'Guardando...' : 'Marcar como pagado'}
+              Marcar como pagado
             </button>
           )}
         </div>

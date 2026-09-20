@@ -11,15 +11,25 @@ function round2(n: number): number {
  * Marca un gasto compartido como saldado: reduce el monto del gasto en la
  * parte que te devolvieron, manteniendo la proporción ARS/USD original
  * (misma cotización con la que se cargó, sin volver a consultarla).
+ *
+ * `actualReturnedAmount` (en la moneda original del gasto) permite corregir
+ * cuánto te devolvieron realmente si terminó siendo distinto a lo esperado
+ * (`partner_share`); por defecto se usa `partner_share` tal cual. El valor
+ * efectivo queda guardado en `partner_share` para que el historial refleje lo
+ * que realmente pasó.
  */
-export async function settleSharedExpense(expense: Expense): Promise<Expense> {
+export async function settleSharedExpense(expense: Expense, actualReturnedAmount?: number): Promise<Expense> {
   if (expense.amount_ars == null || expense.amount_usd == null) {
     throw new Error(
       'Este gasto todavía tiene la cotización pendiente, no se puede liquidar hasta que se resuelva.'
     );
   }
 
-  const partnerShare = expense.partner_share ?? 0;
+  const expectedShare = expense.partner_share ?? 0;
+  const partnerShare = actualReturnedAmount ?? expectedShare;
+  if (partnerShare < 0 || partnerShare > expense.amount) {
+    throw new Error('El monto devuelto no puede ser negativo ni mayor al total del gasto.');
+  }
   const scale = expense.amount > 0 ? (expense.amount - partnerShare) / expense.amount : 1;
 
   const { data, error } = await supabase
@@ -27,6 +37,7 @@ export async function settleSharedExpense(expense: Expense): Promise<Expense> {
     .update({
       is_settled: true,
       settled_at: new Date().toISOString(),
+      partner_share: partnerShare,
       amount: round2(expense.amount - partnerShare),
       amount_ars: round2(expense.amount_ars * scale),
       amount_usd: round2(expense.amount_usd * scale),

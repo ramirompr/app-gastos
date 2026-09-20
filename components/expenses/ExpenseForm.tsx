@@ -21,11 +21,17 @@ import { format, subDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 
 type SplitType = 'personal' | 'invited' | 'shared';
+type MovementType = 'expense' | 'income';
 
 const SPLIT_OPTIONS: { value: SplitType; label: string }[] = [
   { value: 'personal', label: 'Personal' },
   { value: 'invited', label: 'Invitado' },
   { value: 'shared', label: 'Compartido' },
+];
+
+const MOVEMENT_TYPE_OPTIONS: { value: MovementType; label: string }[] = [
+  { value: 'expense', label: 'Gasto' },
+  { value: 'income', label: 'Ingreso' },
 ];
 
 interface ExpenseFormProps {
@@ -48,6 +54,9 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
   // reflejadas en el cache compartido: se muestran igual sin esperar el
   // refetch.
   const [localNewCategories, setLocalNewCategories] = useState<Category[]>([]);
+
+  const [movementType, setMovementType] = useState<MovementType>(expense?.type ?? 'expense');
+  const isIncome = movementType === 'income';
 
   const [amount, setAmount] = useState(expense ? String(expense.amount) : '');
   const [currency, setCurrency] = useState<'ARS' | 'USD'>(expense?.currency ?? 'ARS');
@@ -81,6 +90,20 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
     setPartnerShare('');
     setSharedWith('');
     clearFieldError('partnerShare');
+  };
+
+  const handleMovementTypeChange = (value: MovementType) => {
+    setMovementType(value);
+    if (value === 'income') {
+      // Los ingresos siempre son personales, sin cuotas: son features
+      // exclusivas de gastos.
+      setSplitType('personal');
+      setPartnerShare('');
+      setSharedWith('');
+      setInstallmentsEnabled(false);
+      clearFieldError('partnerShare');
+      clearFieldError('installments');
+    }
   };
 
   const [installmentsEnabled, setInstallmentsEnabled] = useState(false);
@@ -211,6 +234,7 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
             amount_usd,
             exchange_rate_used,
             date: format(selectedDate, 'yyyy-MM-dd'),
+            type: movementType,
             split_type: splitType,
             partner_share: splitType !== 'personal' ? partnerShareTotal : null,
             shared_with: splitType === 'shared' ? sharedWith.trim() || null : null,
@@ -303,6 +327,7 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
           amount_usd,
           exchange_rate_used,
           date: format(selectedDate, 'yyyy-MM-dd'),
+          type: movementType,
           split_type: splitType,
           partner_share: splitType !== 'personal' ? partnerShareTotal : null,
           shared_with: splitType === 'shared' ? sharedWith.trim() || null : null,
@@ -314,7 +339,7 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
       router.push('/dashboard');
     } catch (err) {
       console.error(err);
-      setError('Error al guardar el gasto. Intentá de nuevo.');
+      setError('Error al guardar el movimiento. Intentá de nuevo.');
     } finally {
       setSaving(false);
     }
@@ -333,10 +358,28 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
   return (
     <div className="min-h-screen bg-slate-950 pb-32">
       <PageHeader
-        title={isEdit ? 'Editar gasto' : 'Nuevo gasto'}
+        title={isEdit ? 'Editar movimiento' : 'Nuevo movimiento'}
         onBack={() => (isEdit ? router.back() : router.push('/dashboard'))}
         onMenu={() => setMenuOpen(true)}
       />
+
+      <Container className="flex gap-2 mb-2">
+        {MOVEMENT_TYPE_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            onClick={() => handleMovementTypeChange(opt.value)}
+            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition ${
+              movementType === opt.value
+                ? opt.value === 'income'
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-violet-600 text-white'
+                : 'bg-slate-800 text-slate-400'
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </Container>
 
       <Container className="flex flex-col gap-8">
         {/* Amount */}
@@ -352,11 +395,9 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
                 setAmount(raw);
                 clearFieldError('amount');
               }}
-              className={`text-4xl font-bold bg-transparent text-white placeholder-slate-700 text-right w-40 focus:outline-none border-b-2 transition-colors ${
-                fieldErrors.amount
-                  ? 'border-red-500'
-                  : 'border-slate-800 focus:border-violet-500'
-              }`}
+              className={`text-4xl font-bold bg-transparent placeholder-slate-700 text-right w-40 focus:outline-none border-b-2 transition-colors ${
+                isIncome ? 'text-emerald-400' : 'text-white'
+              } ${fieldErrors.amount ? 'border-red-500' : 'border-slate-800 focus:border-violet-500'}`}
               autoFocus
             />
             <button
@@ -471,55 +512,57 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
           )}
         </div>
 
-        {/* Split type */}
-        <div>
-          <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold mb-3">Tipo de gasto</p>
-          <div className="flex gap-2">
-            {SPLIT_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => handleSplitTypeChange(opt.value)}
-                className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition ${
-                  splitType === opt.value ? 'bg-violet-600 text-white' : 'bg-slate-800 text-slate-400'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-          {splitType !== 'personal' && (
-            <>
-              {fieldErrors.partnerShare && (
-                <p className="text-red-400 text-xs font-medium mt-3">{fieldErrors.partnerShare}</p>
-              )}
-              <MoneyInput
-                placeholder={splitType === 'shared' ? 'Tu parte de este gasto' : 'Cuánto invitaste'}
-                value={partnerShare}
-                onChange={(raw) => {
-                  setPartnerShare(raw);
-                  clearFieldError('partnerShare');
-                }}
-                className={`w-full px-4 py-3 bg-slate-800 border rounded-xl text-white placeholder-slate-500 focus:outline-none transition ${
-                  fieldErrors.partnerShare
-                    ? 'mt-1 border-red-500'
-                    : 'mt-3 border-slate-700 focus:border-violet-500'
-                }`}
+        {/* Split type (solo gastos) */}
+        {!isIncome && (
+          <div>
+            <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold mb-3">Tipo de gasto</p>
+            <div className="flex gap-2">
+              {SPLIT_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => handleSplitTypeChange(opt.value)}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition ${
+                    splitType === opt.value ? 'bg-violet-600 text-white' : 'bg-slate-800 text-slate-400'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            {splitType !== 'personal' && (
+              <>
+                {fieldErrors.partnerShare && (
+                  <p className="text-red-400 text-xs font-medium mt-3">{fieldErrors.partnerShare}</p>
+                )}
+                <MoneyInput
+                  placeholder={splitType === 'shared' ? 'Tu parte de este gasto' : 'Cuánto invitaste'}
+                  value={partnerShare}
+                  onChange={(raw) => {
+                    setPartnerShare(raw);
+                    clearFieldError('partnerShare');
+                  }}
+                  className={`w-full px-4 py-3 bg-slate-800 border rounded-xl text-white placeholder-slate-500 focus:outline-none transition ${
+                    fieldErrors.partnerShare
+                      ? 'mt-1 border-red-500'
+                      : 'mt-3 border-slate-700 focus:border-violet-500'
+                  }`}
+                />
+              </>
+            )}
+            {splitType === 'shared' && (
+              <input
+                type="text"
+                placeholder="¿Quién te debe? (opcional)"
+                value={sharedWith}
+                onChange={(e) => setSharedWith(e.target.value)}
+                className="mt-3 w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:border-violet-500 focus:outline-none transition"
               />
-            </>
-          )}
-          {splitType === 'shared' && (
-            <input
-              type="text"
-              placeholder="¿Quién te debe? (opcional)"
-              value={sharedWith}
-              onChange={(e) => setSharedWith(e.target.value)}
-              className="mt-3 w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:border-violet-500 focus:outline-none transition"
-            />
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
-        {/* Installments */}
-        {isEdit ? (
+        {/* Installments (solo gastos) */}
+        {isIncome ? null : isEdit ? (
           expense?.installment_plan_id && (
             <p className="text-xs text-slate-500 bg-slate-800/60 rounded-xl px-4 py-3">
               Esta es la cuota {expense.installment_number} de un plan en curso. Editar acá solo
@@ -631,7 +674,7 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
             disabled={saving}
             className="w-full py-4 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-semibold rounded-xl transition"
           >
-            {saving ? 'Guardando...' : isEdit ? 'Guardar cambios' : 'Guardar gasto'}
+            {saving ? 'Guardando...' : isEdit ? 'Guardar cambios' : 'Guardar movimiento'}
           </button>
         </Container>
       </div>

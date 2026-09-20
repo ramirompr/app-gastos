@@ -74,7 +74,7 @@ export default function CategoriesPage() {
       setActionSheet(null);
     } catch {
       setDeleteError(
-        'No se pudo eliminar. Puede que todavía tenga gastos asociados: movelos o borralos primero.'
+        'No se pudo eliminar. Puede que todavía tenga movimientos asociados: movelos o borralos primero.'
       );
     } finally {
       setDeleting(false);

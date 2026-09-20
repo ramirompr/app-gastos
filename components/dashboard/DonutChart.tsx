@@ -63,7 +63,7 @@ export function DonutChart({ slices, centerLabel, onAddClick }: DonutChartProps)
 
       <button
         onClick={onAddClick}
-        aria-label="Añadir gasto"
+        aria-label="Añadir movimiento"
         className="absolute bottom-0 right-0 w-12 h-12 bg-amber-400 hover:bg-amber-300 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-all"
       >
         <PlusIcon className="text-slate-900" />
