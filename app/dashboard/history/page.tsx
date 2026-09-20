@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { Category, Expense, ExpenseInstallmentPlan } from '@/lib/types';
 import { Emoji } from '@/components/ui/Emoji';
-import { ChevronUp, ChevronDown, Repeat } from 'lucide-react';
+import { ChevronUp, ChevronDown, Repeat, Download } from 'lucide-react';
 import { deleteExpense } from '@/lib/expenses';
+import { exportHistoryToCsv } from '@/lib/history-export';
 import { SettlePaymentSheet } from '@/components/expenses/SettlePaymentSheet';
 import { useCurrencyDisplay } from '@/lib/currency-display-context';
 import { pickAmount, formatMoney, formatExpenseAmount, formatPartnerShare } from '@/lib/format-money';
@@ -89,6 +90,22 @@ export default function HistoryPage() {
   const hasMore = visibleCount < items.length;
 
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  const handleExport = async () => {
+    if (!user || exporting) return;
+    setExportError(null);
+    setExporting(true);
+    try {
+      await exportHistoryToCsv(user.id, categories);
+    } catch (err) {
+      console.error(err);
+      setExportError('No se pudo descargar el historial. Intentá de nuevo.');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const applySettled = (updated: Expense) => {
     setLocalPlainExpenses((prev) =>
@@ -127,9 +144,29 @@ export default function HistoryPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 pb-16">
-      <PageHeader title="Historial" onBack={() => router.push('/dashboard')} onMenu={() => setMenuOpen(true)} />
+      <PageHeader
+        title="Historial"
+        onBack={() => router.push('/dashboard')}
+        onMenu={() => setMenuOpen(true)}
+        actions={
+          <button
+            onClick={handleExport}
+            disabled={exporting || (!loading && items.length === 0)}
+            aria-label="Descargar historial"
+            title="Descargar historial (CSV)"
+            className="text-white disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {exporting ? (
+              <div className="w-[22px] h-[22px] animate-spin rounded-full border-2 border-white border-t-transparent" />
+            ) : (
+              <Download size={22} strokeWidth={2} />
+            )}
+          </button>
+        }
+      />
 
       <Container className="flex flex-col gap-3">
+        {exportError && <p className="text-xs text-red-400">{exportError}</p>}
         {loading && <SkeletonList count={6} />}
         {!loading && items.length === 0 && (
           <p className="text-center text-slate-500 text-sm py-16">No hay movimientos cargados todavía.</p>
