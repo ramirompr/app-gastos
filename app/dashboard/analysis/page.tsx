@@ -9,6 +9,7 @@ import { Emoji } from '@/components/ui/Emoji';
 import { niceAxis } from '@/lib/chart-scale';
 import { useCurrencyDisplay } from '@/lib/currency-display-context';
 import { pickAmount, formatMoney } from '@/lib/format-money';
+import { pluralize } from '@/lib/pluralize';
 import {
   peekCategories,
   getCategoriesCached,
@@ -199,8 +200,8 @@ export default function AnalysisPage() {
           <>
             {pendingCount > 0 && (
               <p className="text-amber-400 text-xs text-center bg-amber-400/10 rounded-lg px-3 py-2">
-                {pendingCount} {pendingCount === 1 ? 'gasto' : 'gastos'} con cotización pendiente, no
-                {pendingCount === 1 ? ' está incluido' : ' están incluidos'} en este análisis todavía.
+                {pendingCount} {pluralize(pendingCount, 'gasto')} con cotización pendiente, no
+                {pluralize(pendingCount, ' está incluido', ' están incluidos')} en este análisis todavía.
               </p>
             )}
             <StackedBarChart months={months} axisMax={axisMax} ticks={ticks} isUsd={showUsd} />

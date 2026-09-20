@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from './supabase';
 import { Category, Expense, ExpenseInstallmentPlan, RecurringConfirmation, RecurringExpense } from './types';
 import { fetchUserCategories } from './categories';
@@ -393,4 +393,20 @@ export function useCachedResource<T>(
   }, deps);
 
   return { data, loading };
+}
+
+/**
+ * Saca de una lista, al instante, los ítems recién resueltos en esta sesión
+ * (ej. un gasto compartido que se acaba de saldar) sin esperar el refetch:
+ * el cache ya quedó invalidado por la mutación, pero recién se relee en la
+ * próxima visita a esa pantalla o cuando la pestaña recupera el foco.
+ */
+export function useOptimisticExclude<T extends { id: string }>(items: T[] | null | undefined) {
+  const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set());
+  const visible = useMemo(
+    () => (items ?? []).filter((item) => !excludedIds.has(item.id)),
+    [items, excludedIds]
+  );
+  const exclude = (id: string) => setExcludedIds((prev) => new Set(prev).add(id));
+  return { visible, exclude };
 }

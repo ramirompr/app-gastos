@@ -8,12 +8,14 @@ import { Emoji } from '@/components/ui/Emoji';
 import { SettlePaymentSheet } from '@/components/expenses/SettlePaymentSheet';
 import { useCurrencyDisplay } from '@/lib/currency-display-context';
 import { pickAmount, formatMoney, formatExpenseAmount, formatPartnerShare, partnerShareInArsUsd } from '@/lib/format-money';
+import { pluralize } from '@/lib/pluralize';
 import {
   peekCategories,
   getCategoriesCached,
   peekPendingPayments,
   getPendingPaymentsCached,
   useCachedResource,
+  useOptimisticExclude,
 } from '@/lib/app-data';
 import { AppMenu } from '@/components/layout/AppMenu';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -29,9 +31,6 @@ export default function PendingPaymentsPage() {
 
   const [settlingExpense, setSettlingExpense] = useState<Expense | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  // Gastos saldados en esta sesión, para sacarlos de la lista al instante sin
-  // esperar el refetch (el cache ya quedó invalidado por settleSharedExpense).
-  const [settledIds, setSettledIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!authLoading && !user) router.push('/login');
@@ -48,7 +47,7 @@ export default function PendingPaymentsPage() {
     [user?.id]
   );
   const categories = cachedCategories ?? [];
-  const expenses = (cachedExpenses ?? []).filter((e) => !settledIds.has(e.id));
+  const { visible: expenses, exclude: excludeSettled } = useOptimisticExclude(cachedExpenses);
   const loading = loadingCategories || loadingExpenses;
 
   if (authLoading) {
@@ -77,7 +76,7 @@ export default function PendingPaymentsPage() {
         <p className="text-slate-500 text-sm text-center">
           {loading
             ? ''
-            : `${expenses.length} ${expenses.length === 1 ? 'gasto' : 'gastos'} · Te deben ${formatMoney(totalOwed, showUsd)}`}
+            : `${expenses.length} ${pluralize(expenses.length, 'gasto')} · Te deben ${formatMoney(totalOwed, showUsd)}`}
         </p>
       </Container>
 
@@ -140,7 +139,7 @@ export default function PendingPaymentsPage() {
           expense={settlingExpense}
           onClose={() => setSettlingExpense(null)}
           onSettled={() => {
-            setSettledIds((prev) => new Set(prev).add(settlingExpense.id));
+            excludeSettled(settlingExpense.id);
             setSettlingExpense(null);
           }}
         />

@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { Category } from '@/lib/types';
 import { peekCategories, getCategoriesCached, useCachedResource, invalidateAppData } from '@/lib/app-data';
+import { pluralize } from '@/lib/pluralize';
 import { CategoryFormModal } from '@/components/categories/CategoryFormModal';
 import { AppMenu } from '@/components/layout/AppMenu';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -104,7 +105,7 @@ export default function CategoriesPage() {
         onMenu={() => setMenuOpen(true)}
       />
       <p className="text-slate-500 text-sm text-center px-4 mb-2">
-        {loading ? '' : `${topLevel.length} ${topLevel.length === 1 ? 'categoría' : 'categorías'}`}
+        {loading ? '' : `${topLevel.length} ${pluralize(topLevel.length, 'categoría')}`}
       </p>
 
       <Container>
@@ -144,7 +145,7 @@ export default function CategoriesPage() {
                     <p className="text-white font-medium text-sm leading-tight">{cat.name}</p>
                     {subs > 0 ? (
                       <p className="text-slate-500 text-xs mt-0.5">
-                        {subs} {subs === 1 ? 'subcategoría' : 'subcategorías'}
+                        {subs} {pluralize(subs, 'subcategoría')}
                       </p>
                     ) : (
                       <p className="text-slate-600 text-xs mt-0.5">Sin subcategorías</p>
@@ -236,7 +237,7 @@ export default function CategoriesPage() {
           {actionSheet.subCount > 0 && (
             <p className="text-amber-400 text-sm mb-4">
               También se van a eliminar sus {actionSheet.subCount}{' '}
-              {actionSheet.subCount === 1 ? 'subcategoría' : 'subcategorías'}.
+              {pluralize(actionSheet.subCount, 'subcategoría')}.
             </p>
           )}
           <p className="text-slate-400 text-sm mb-2">Esta acción no se puede deshacer.</p>

@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { Category } from '@/lib/types';
 import { invalidateAppData } from '@/lib/app-data';
+import { pluralize } from '@/lib/pluralize';
 import { CategoryFormModal } from '@/components/categories/CategoryFormModal';
 import { AppMenu } from '@/components/layout/AppMenu';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -117,7 +118,7 @@ export default function SubcategoriesPage() {
             <p className="text-white font-semibold">{parent.name}</p>
             <p className="text-slate-500 text-sm">
               {subcategories.length}{' '}
-              {subcategories.length === 1 ? 'subcategoría' : 'subcategorías'}
+              {pluralize(subcategories.length, 'subcategoría')}
             </p>
           </div>
         </div>

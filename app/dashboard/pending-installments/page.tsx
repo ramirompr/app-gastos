@@ -7,6 +7,7 @@ import { ExpenseInstallmentPlan } from '@/lib/types';
 import { Emoji } from '@/components/ui/Emoji';
 import { useCurrencyDisplay } from '@/lib/currency-display-context';
 import { pickAmount, formatMoney } from '@/lib/format-money';
+import { pluralize } from '@/lib/pluralize';
 import {
   peekCategories,
   getCategoriesCached,
@@ -108,7 +109,7 @@ export default function PendingInstallmentsPage() {
       />
       <Container className="pb-4">
         <p className="text-slate-500 text-sm text-center">
-          {loading ? '' : `${activePlans.length} ${activePlans.length === 1 ? 'plan activo' : 'planes activos'}`}
+          {loading ? '' : `${activePlans.length} ${pluralize(activePlans.length, 'plan activo', 'planes activos')}`}
         </p>
       </Container>
 
@@ -166,7 +167,7 @@ export default function PendingInstallmentsPage() {
 
               <div className="flex items-center justify-between bg-slate-900/50 rounded-lg px-3 py-2">
                 <p className="text-xs text-slate-400">
-                  Restan {remainingCount} {remainingCount === 1 ? 'cuota' : 'cuotas'} ·{' '}
+                  Restan {remainingCount} {pluralize(remainingCount, 'cuota')} ·{' '}
                   {hasPendingRemaining
                     ? 'total con cotización pendiente'
                     : `${formatMoney(remainingAmount, showUsd)} en total`}

@@ -9,6 +9,7 @@ import { deleteExpense } from '@/lib/expenses';
 import { SettlePaymentSheet } from '@/components/expenses/SettlePaymentSheet';
 import { useCurrencyDisplay } from '@/lib/currency-display-context';
 import { pickAmount, formatMoney, formatExpenseAmount, formatPartnerShare, partnerShareInArsUsd } from '@/lib/format-money';
+import { pluralize, movementNoun } from '@/lib/pluralize';
 import { AppMenu } from '@/components/layout/AppMenu';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Container } from '@/components/layout/Container';
@@ -149,7 +150,7 @@ function ExpensesListContent() {
           <div>
             <p className="text-white font-semibold">{category.name}</p>
             <p className="text-slate-500 text-sm">
-              {expenses.length} {expenses.length === 1 ? (isIncome ? 'ingreso' : 'gasto') : (isIncome ? 'ingresos' : 'gastos')} ·{' '}
+              {expenses.length} {movementNoun(expenses.length, isIncome)} ·{' '}
               {formatMoney(total, showUsd)}
             </p>
             {totalInvited > 0 && (
@@ -172,8 +173,8 @@ function ExpensesListContent() {
       <Container className="flex flex-col gap-3">
         {pendingCount > 0 && (
           <p className="text-amber-400 text-xs text-center bg-amber-400/10 rounded-lg px-3 py-2">
-            {pendingCount} {pendingCount === 1 ? (isIncome ? 'ingreso' : 'gasto') : (isIncome ? 'ingresos' : 'gastos')} con
-            cotización del dólar pendiente — no {pendingCount === 1 ? 'está incluido' : 'están incluidos'} en
+            {pendingCount} {movementNoun(pendingCount, isIncome)} con
+            cotización del dólar pendiente — no {pluralize(pendingCount, 'está incluido', 'están incluidos')} en
             el total todavía.
           </p>
         )}
@@ -195,7 +196,7 @@ function ExpensesListContent() {
                   </div>
                   <p className="text-white text-sm font-semibold flex-1 truncate">{group.label}</p>
                   <p className="text-slate-500 text-xs whitespace-nowrap">
-                    {group.count} {group.count === 1 ? (isIncome ? 'ingreso' : 'gasto') : (isIncome ? 'ingresos' : 'gastos')}
+                    {group.count} {movementNoun(group.count, isIncome)}
                   </p>
                   <p className="text-white text-sm font-semibold whitespace-nowrap">
                     {formatMoney(group.amount, showUsd)}

@@ -9,6 +9,7 @@ import { Emoji } from '@/components/ui/Emoji';
 import { Container } from '@/components/layout/Container';
 import { useCurrencyDisplay } from '@/lib/currency-display-context';
 import { pickAmount, formatMoney, formatPartnerShare } from '@/lib/format-money';
+import { pluralize } from '@/lib/pluralize';
 import { resolvePendingExchangeRates } from '@/lib/expenses';
 import { convertWithRate } from '@/lib/exchange-rates';
 import { isRecurringDueInMonth } from '@/lib/recurring';
@@ -22,6 +23,7 @@ import {
   peekPendingPayments,
   getPendingPaymentsCached,
   useCachedResource,
+  useOptimisticExclude,
   invalidateAppData,
   prefetchAppData,
 } from '@/lib/app-data';
@@ -66,9 +68,6 @@ export default function DashboardPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [payingRecurring, setPayingRecurring] = useState<RecurringExpense | null>(null);
   const [settlingExpense, setSettlingExpense] = useState<Expense | null>(null);
-  // Pagos pendientes saldados en esta sesión, para sacarlos de la columna al
-  // instante sin esperar el refetch (el cache ya quedó invalidado).
-  const [settledIds, setSettledIds] = useState<Set<string>>(new Set());
 
   // Se incrementa cuando se resuelven cotizaciones que estaban pendientes,
   // para forzar un refetch de categorías/gastos (invalidamos el cache justo
@@ -156,7 +155,7 @@ export default function DashboardPage() {
     () => (user ? getPendingPaymentsCached(user.id) : null),
     [user?.id, refreshTick]
   );
-  const pendingPayments = (pendingPaymentsData ?? []).filter((e) => !settledIds.has(e.id));
+  const { visible: pendingPayments, exclude: excludeSettled } = useOptimisticExclude(pendingPaymentsData);
 
   const recurringStatuses = useMemo<RecurringStatus[]>(() => {
     if (!recurringData) return [];
@@ -187,20 +186,36 @@ export default function DashboardPage() {
     [expenses]
   );
 
-  const breakdown = useMemo(() => {
-    const totals = new Map<string, { ars: number; usd: number }>();
+  // Un solo recorrido de `expenses` (puede ser largo) que separa gastos por
+  // categoría e ingresos, en vez de dos pasadas completas filtrando cada una
+  // por el tipo contrario.
+  const { categoryTotals, incomeArs, incomeUsd } = useMemo(() => {
+    const categoryTotals = new Map<string, { ars: number; usd: number }>();
+    let incomeArs = 0;
+    let incomeUsd = 0;
     for (const exp of expenses) {
-      if (exp.type === 'income') continue;
+      if (exp.type === 'income') {
+        incomeArs += exp.amount_ars ?? 0;
+        incomeUsd += exp.amount_usd ?? 0;
+        continue;
+      }
       const top = getTopLevelCategory(categories, exp.category_id);
       if (!top) continue;
-      const prev = totals.get(top.id) ?? { ars: 0, usd: 0 };
-      totals.set(top.id, { ars: prev.ars + (exp.amount_ars ?? 0), usd: prev.usd + (exp.amount_usd ?? 0) });
+      const prev = categoryTotals.get(top.id) ?? { ars: 0, usd: 0 };
+      categoryTotals.set(top.id, {
+        ars: prev.ars + (exp.amount_ars ?? 0),
+        usd: prev.usd + (exp.amount_usd ?? 0),
+      });
     }
-    const total = Array.from(totals.values()).reduce(
+    return { categoryTotals, incomeArs, incomeUsd };
+  }, [expenses, categories]);
+
+  const breakdown = useMemo(() => {
+    const total = Array.from(categoryTotals.values()).reduce(
       (sum, t) => sum + pickAmount(t.ars, t.usd, showUsd),
       0
     );
-    return Array.from(totals.entries())
+    return Array.from(categoryTotals.entries())
       .map(([categoryId, t]) => {
         const cat = categories.find((c) => c.id === categoryId)!;
         const amount = pickAmount(t.ars, t.usd, showUsd);
@@ -211,21 +226,10 @@ export default function DashboardPage() {
         };
       })
       .sort((a, b) => b.amount - a.amount);
-  }, [expenses, categories, showUsd]);
+  }, [categoryTotals, categories, showUsd]);
 
   const total = breakdown.reduce((sum, b) => sum + b.amount, 0);
-
-  const totalIncome = useMemo(() => {
-    let ars = 0;
-    let usd = 0;
-    for (const exp of expenses) {
-      if (exp.type !== 'income') continue;
-      ars += exp.amount_ars ?? 0;
-      usd += exp.amount_usd ?? 0;
-    }
-    return pickAmount(ars, usd, showUsd);
-  }, [expenses, showUsd]);
-
+  const totalIncome = pickAmount(incomeArs, incomeUsd, showUsd);
   const netBalance = totalIncome - total;
   // Math.abs() solo, sin signo, hacía que un saldo a favor y uno en contra
   // se vieran idénticos en el centro del donut — justo el dato que ese
@@ -364,8 +368,8 @@ export default function DashboardPage() {
           <>
             {pendingCount > 0 && (
               <p className="text-amber-400 text-xs text-center bg-amber-400/10 rounded-lg px-3 py-2">
-                {pendingCount} {pendingCount === 1 ? 'movimiento' : 'movimientos'} con cotización del
-                dólar pendiente — no {pendingCount === 1 ? 'está incluido' : 'están incluidos'} en el
+                {pendingCount} {pluralize(pendingCount, 'movimiento')} con cotización del
+                dólar pendiente — no {pluralize(pendingCount, 'está incluido', 'están incluidos')} en el
                 total todavía.
               </p>
             )}
@@ -412,40 +416,32 @@ export default function DashboardPage() {
               const topCat = getTopLevelCategory(categories, exp.category_id);
               const isPending = exp.exchange_rate_used == null;
               return (
-                <div
+                <DashboardRowCard
                   key={exp.id}
                   onClick={() => router.push('/dashboard/pending-payments')}
-                  className="flex items-center gap-3 rounded-xl px-4 py-3 cursor-pointer active:scale-[0.98] transition-all bg-slate-800/60 hover:bg-slate-800"
-                >
-                  {topCat && (
-                    <div
-                      className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
-                      style={{ backgroundColor: topCat.color }}
-                    >
-                      <Emoji emoji={topCat.icon} size={16} />
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-white text-sm font-medium truncate">{exp.description}</p>
-                    <p className="text-slate-500 text-xs mt-0.5 truncate">
-                      {cat && (cat.parent_id ? `${topCat?.name} › ${cat.name}` : cat.name)}
-                    </p>
+                  cardClassName="bg-slate-800/60 hover:bg-slate-800"
+                  icon={topCat ? { emoji: topCat.icon, color: topCat.color } : undefined}
+                  title={exp.description}
+                  subtitle={cat ? (cat.parent_id ? `${topCat?.name} › ${cat.name}` : cat.name) : undefined}
+                  statusLine={
                     <p className="text-xs mt-0.5 font-medium text-amber-400">
                       Te deben {formatPartnerShare(exp, showUsd)}
                     </p>
-                  </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSettlingExpense(exp);
-                    }}
-                    disabled={isPending}
-                    title={isPending ? 'Esperá a que se resuelva la cotización pendiente' : undefined}
-                    className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 disabled:opacity-50 whitespace-nowrap"
-                  >
-                    Pagar
-                  </button>
-                </div>
+                  }
+                  right={
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSettlingExpense(exp);
+                      }}
+                      disabled={isPending}
+                      title={isPending ? 'Esperá a que se resuelva la cotización pendiente' : undefined}
+                      className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 disabled:opacity-50 whitespace-nowrap"
+                    >
+                      Pagar
+                    </button>
+                  }
+                />
               );
             })}
           </div>
@@ -481,43 +477,35 @@ export default function DashboardPage() {
               pending: 'Pendiente',
             }[status];
             return (
-              <div
+              <DashboardRowCard
                 key={recurring.id}
                 onClick={() => router.push('/dashboard/recurring')}
-                className={`flex items-center gap-3 rounded-xl px-4 py-3 cursor-pointer active:scale-[0.98] transition-all border ${cardClass}`}
-              >
-                {topCat && (
-                  <div
-                    className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
-                    style={{ backgroundColor: topCat.color }}
-                  >
-                    <Emoji emoji={topCat.icon} size={16} />
-                  </div>
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className="text-white text-sm font-medium truncate">{recurring.description}</p>
-                  <p className="text-slate-500 text-xs mt-0.5 truncate">
-                    {cat && (cat.parent_id ? `${topCat?.name} › ${cat.name}` : cat.name)}
-                  </p>
+                cardClassName={`border ${cardClass}`}
+                icon={topCat ? { emoji: topCat.icon, color: topCat.color } : undefined}
+                title={recurring.description}
+                subtitle={cat ? (cat.parent_id ? `${topCat?.name} › ${cat.name}` : cat.name) : undefined}
+                statusLine={
                   <p className={`text-xs mt-0.5 font-medium ${textClass}`}>
                     {label} · día {recurring.day_of_month}
                   </p>
-                </div>
-                <div className="flex flex-col items-end gap-1">
-                  <p className="text-white text-sm font-semibold whitespace-nowrap">
-                    {amount !== null ? formatMoney(amount, showUsd) : 'Cotización pendiente'}
-                  </p>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPayingRecurring(recurring);
-                    }}
-                    className="text-xs font-semibold text-violet-400 hover:text-violet-300 whitespace-nowrap"
-                  >
-                    Pagar
-                  </button>
-                </div>
-              </div>
+                }
+                right={
+                  <div className="flex flex-col items-end gap-1">
+                    <p className="text-white text-sm font-semibold whitespace-nowrap">
+                      {amount !== null ? formatMoney(amount, showUsd) : 'Cotización pendiente'}
+                    </p>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPayingRecurring(recurring);
+                      }}
+                      className="text-xs font-semibold text-violet-400 hover:text-violet-300 whitespace-nowrap"
+                    >
+                      Pagar
+                    </button>
+                  </div>
+                }
+              />
             );
           })}
           </div>
@@ -530,7 +518,7 @@ export default function DashboardPage() {
           expense={settlingExpense}
           onClose={() => setSettlingExpense(null)}
           onSettled={() => {
-            setSettledIds((prev) => new Set(prev).add(settlingExpense.id));
+            excludeSettled(settlingExpense.id);
             setSettlingExpense(null);
             // Sin esto, el desglose/donut/balance neto (expensesData, atado a
             // refreshTick) siguen mostrando el monto viejo del gasto recién
@@ -556,6 +544,41 @@ export default function DashboardPage() {
       )}
 
       <AppMenu open={menuOpen} onClose={() => setMenuOpen(false)} />
+    </div>
+  );
+}
+
+interface DashboardRowCardProps {
+  icon?: { emoji: string; color: string };
+  title: string;
+  subtitle?: string;
+  statusLine: React.ReactNode;
+  right: React.ReactNode;
+  cardClassName: string;
+  onClick: () => void;
+}
+
+/** Fila clickeable de "Pagos pendientes" / "Recurrentes de este mes" — misma estructura, distinto color/contenido a la derecha. */
+function DashboardRowCard({ icon, title, subtitle, statusLine, right, cardClassName, onClick }: DashboardRowCardProps) {
+  return (
+    <div
+      onClick={onClick}
+      className={`flex items-center gap-3 rounded-xl px-4 py-3 cursor-pointer active:scale-[0.98] transition-all ${cardClassName}`}
+    >
+      {icon && (
+        <div
+          className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+          style={{ backgroundColor: icon.color }}
+        >
+          <Emoji emoji={icon.emoji} size={16} />
+        </div>
+      )}
+      <div className="flex-1 min-w-0">
+        <p className="text-white text-sm font-medium truncate">{title}</p>
+        {subtitle && <p className="text-slate-500 text-xs mt-0.5 truncate">{subtitle}</p>}
+        {statusLine}
+      </div>
+      {right}
     </div>
   );
 }
