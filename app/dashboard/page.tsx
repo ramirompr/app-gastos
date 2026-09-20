@@ -179,8 +179,11 @@ export default function DashboardPage() {
       .sort((a, b) => statusRank[a.status] - statusRank[b.status] || a.recurring.day_of_month - b.recurring.day_of_month);
   }, [recurringData]);
 
+  // Cuenta gastos E ingresos con cotización pendiente: un ingreso pendiente
+  // también contribuye 0 silenciosamente a totalIncome/netBalance más abajo,
+  // así que necesita el mismo aviso que un gasto pendiente.
   const pendingCount = useMemo(
-    () => expenses.filter((e: Expense) => e.type !== 'income' && e.exchange_rate_used == null).length,
+    () => expenses.filter((e: Expense) => e.exchange_rate_used == null).length,
     [expenses]
   );
 
@@ -224,6 +227,14 @@ export default function DashboardPage() {
   }, [expenses, showUsd]);
 
   const netBalance = totalIncome - total;
+  // Math.abs() solo, sin signo, hacía que un saldo a favor y uno en contra
+  // se vieran idénticos en el centro del donut — justo el dato que ese
+  // número está ahí para mostrar. "+" sigue la misma convención que ya usan
+  // los ingresos en el listado (ver ExpenseRow en history/page.tsx).
+  const netBalanceLabel = `${netBalance < 0 ? '-' : netBalance > 0 ? '+' : ''}${formatMoney(
+    Math.abs(netBalance),
+    showUsd
+  )}`;
 
   const handlePrev = () => setAnchor((a) => shiftAnchor(period, a, -1));
   const handleNext = () => {
@@ -339,7 +350,7 @@ export default function DashboardPage() {
         ) : (
           <DonutChart
             slices={breakdown.map((b) => ({ color: b.category.color, value: b.amount }))}
-            centerLabel={formatMoney(Math.abs(netBalance), showUsd)}
+            centerLabel={netBalanceLabel}
             onAddClick={() => router.push('/dashboard/expenses/new')}
           />
         )}
@@ -353,9 +364,9 @@ export default function DashboardPage() {
           <>
             {pendingCount > 0 && (
               <p className="text-amber-400 text-xs text-center bg-amber-400/10 rounded-lg px-3 py-2">
-                {pendingCount} {pendingCount === 1 ? 'gasto' : 'gastos'} con cotización del dólar
-                pendiente — no {pendingCount === 1 ? 'está incluido' : 'están incluidos'} en el total
-                todavía.
+                {pendingCount} {pendingCount === 1 ? 'movimiento' : 'movimientos'} con cotización del
+                dólar pendiente — no {pendingCount === 1 ? 'está incluido' : 'están incluidos'} en el
+                total todavía.
               </p>
             )}
             {breakdown.length === 0 && (
@@ -521,6 +532,10 @@ export default function DashboardPage() {
           onSettled={() => {
             setSettledIds((prev) => new Set(prev).add(settlingExpense.id));
             setSettlingExpense(null);
+            // Sin esto, el desglose/donut/balance neto (expensesData, atado a
+            // refreshTick) siguen mostrando el monto viejo del gasto recién
+            // saldado hasta que la pestaña pierde y recupera foco.
+            setRefreshTick((t) => t + 1);
           }}
         />
       )}

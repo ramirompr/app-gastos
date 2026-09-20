@@ -79,7 +79,11 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
   // editar hay que invertir el cálculo. Para "invitado" sigue siendo el
   // monto que invitaste, igual que en la DB.
   const [partnerShare, setPartnerShare] = useState(() => {
-    if (!expense?.partner_share) return '';
+    // OJO: partner_share puede ser 0 legítimamente en un gasto compartido ya
+    // saldado sin devolución (desde la migración 016) — no es lo mismo que
+    // "sin cargar". Un chequeo `!expense.partner_share` trataría ambos casos
+    // igual y dejaría el campo vacío, bloqueando el guardado al editar.
+    if (expense?.partner_share == null) return '';
     if (expense.split_type === 'shared') return String(expense.amount - expense.partner_share);
     return String(expense.partner_share);
   });
@@ -97,11 +101,8 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
     if (value === 'income') {
       // Los ingresos siempre son personales, sin cuotas: son features
       // exclusivas de gastos.
-      setSplitType('personal');
-      setPartnerShare('');
-      setSharedWith('');
+      handleSplitTypeChange('personal');
       setInstallmentsEnabled(false);
-      clearFieldError('partnerShare');
       clearFieldError('installments');
     }
   };
@@ -299,6 +300,10 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
               amount_usd,
               exchange_rate_used,
               date: format(item.date, 'yyyy-MM-dd'),
+              // Las cuotas son siempre gastos (el toggle de Ingreso ni se
+              // muestra cuando installmentsEnabled), pero lo dejamos
+              // explícito en vez de depender del default de la columna.
+              type: 'expense' as const,
               split_type: splitType,
               partner_share: splitType !== 'personal' ? partnerAmountForItem : null,
               shared_with: splitType === 'shared' ? sharedWith.trim() || null : null,
@@ -363,23 +368,29 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
         onMenu={() => setMenuOpen(true)}
       />
 
-      <Container className="flex gap-2 mb-2">
-        {MOVEMENT_TYPE_OPTIONS.map((opt) => (
-          <button
-            key={opt.value}
-            onClick={() => handleMovementTypeChange(opt.value)}
-            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition ${
-              movementType === opt.value
-                ? opt.value === 'income'
-                  ? 'bg-emerald-600 text-white'
-                  : 'bg-violet-600 text-white'
-                : 'bg-slate-800 text-slate-400'
-            }`}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </Container>
+      {/* Las cuotas son una feature exclusiva de gastos (ver comentario en
+          handleMovementTypeChange) — al editar una cuota no tiene sentido
+          ofrecer pasarla a "Ingreso", porque el update solo toca esa fila y
+          nunca desengancha installment_plan_id/installment_number. */}
+      {!(isEdit && expense?.installment_plan_id) && (
+        <Container className="flex gap-2 mb-2">
+          {MOVEMENT_TYPE_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => handleMovementTypeChange(opt.value)}
+              className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition ${
+                movementType === opt.value
+                  ? opt.value === 'income'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-violet-600 text-white'
+                  : 'bg-slate-800 text-slate-400'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </Container>
+      )}
 
       <Container className="flex flex-col gap-8">
         {/* Amount */}

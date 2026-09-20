@@ -52,7 +52,12 @@ export function SettlePaymentSheet({ expense, onClose, onSettled }: SettlePaymen
   };
 
   return (
-    <BottomSheet onClose={onClose}>
+    // Mientras `settleSharedExpense` está en vuelo, ni el backdrop ni
+    // "Cancelar" deben cerrar la hoja: si el usuario la cierra igual, la
+    // promesa sigue viva y, al resolver, onSettled se dispara sobre un padre
+    // que ya cree que se canceló (o el error de un fallo queda mudo, porque
+    // cae en un componente ya desmontado).
+    <BottomSheet onClose={onClose} preventClose={saving}>
       <div className="flex flex-col gap-4">
         <p className="text-white font-semibold text-lg">Marcar &quot;{expense.description}&quot; como pagado</p>
         <p className="text-slate-400 text-sm -mt-2">
@@ -74,7 +79,8 @@ export function SettlePaymentSheet({ expense, onClose, onSettled }: SettlePaymen
         <div className="flex gap-3">
           <button
             onClick={onClose}
-            className="flex-1 py-4 bg-slate-800 hover:bg-slate-700 text-white font-semibold rounded-xl transition"
+            disabled={saving}
+            className="flex-1 py-4 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white font-semibold rounded-xl transition"
           >
             Cancelar
           </button>

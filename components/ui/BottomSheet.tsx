@@ -9,12 +9,20 @@ interface BottomSheetProps {
   panelClassName?: string;
   /** Para un BottomSheet abierto arriba de otro BottomSheet (ej. un picker dentro de un formulario). */
   stacked?: boolean;
+  /** Ignora el click en el backdrop (ej. mientras hay un guardado en curso, para no cerrar sobre una mutación en vuelo). */
+  preventClose?: boolean;
 }
 
 const TRANSITION_MS = 300;
 
 /** Overlay + panel deslizable desde abajo, usado por todos los action sheets de la app. */
-export function BottomSheet({ onClose, children, panelClassName = '', stacked = false }: BottomSheetProps) {
+export function BottomSheet({
+  onClose,
+  children,
+  panelClassName = '',
+  stacked = false,
+  preventClose = false,
+}: BottomSheetProps) {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -23,6 +31,7 @@ export function BottomSheet({ onClose, children, panelClassName = '', stacked = 
   }, []);
 
   const handleClose = () => {
+    if (preventClose) return;
     setVisible(false);
     setTimeout(onClose, TRANSITION_MS);
   };
