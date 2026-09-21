@@ -349,7 +349,14 @@ export default function DashboardPage() {
           <SkeletonCircle />
         ) : (
           <DonutChart
-            slices={breakdown.map((b) => ({ color: b.category.color, value: b.amount }))}
+            slices={breakdown.map((b) => ({
+              id: b.category.id,
+              color: b.category.color,
+              value: b.amount,
+              label: b.category.name,
+              percent: b.percent,
+              amountLabel: formatMoney(b.amount, showUsd),
+            }))}
             centerLabel={netBalanceLabel}
             onAddClick={() => router.push('/dashboard/expenses/new')}
           />
