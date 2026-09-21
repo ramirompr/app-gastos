@@ -30,6 +30,7 @@ import {
 import { ConfirmPaymentSheet } from '@/components/recurring/ConfirmPaymentSheet';
 import { SettlePaymentSheet } from '@/components/expenses/SettlePaymentSheet';
 import { DonutChart } from '@/components/dashboard/DonutChart';
+import { CategorySliceSheet } from '@/components/dashboard/CategorySliceSheet';
 import { AppMenu } from '@/components/layout/AppMenu';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { SkeletonCircle, SkeletonList } from '@/components/ui/Skeleton';
@@ -68,6 +69,7 @@ export default function DashboardPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [payingRecurring, setPayingRecurring] = useState<RecurringExpense | null>(null);
   const [settlingExpense, setSettlingExpense] = useState<Expense | null>(null);
+  const [selectedSliceId, setSelectedSliceId] = useState<string | null>(null);
 
   // Se incrementa cuando se resuelven cotizaciones que estaban pendientes,
   // para forzar un refetch de categorías/gastos (invalidamos el cache justo
@@ -235,6 +237,7 @@ export default function DashboardPage() {
   // idénticos en el centro del donut. El "-" para saldo en contra se omite
   // a pedido explícito del usuario (es el caso normal: gastos > ingresos).
   const netBalanceLabel = `${netBalance > 0 ? '+' : ''}${formatMoney(Math.abs(netBalance), showUsd)}`;
+  const selectedSlice = breakdown.find((b) => b.category.id === selectedSliceId) ?? null;
 
   const handlePrev = () => setAnchor((a) => shiftAnchor(period, a, -1));
   const handleNext = () => {
@@ -349,9 +352,10 @@ export default function DashboardPage() {
           <SkeletonCircle />
         ) : (
           <DonutChart
-            slices={breakdown.map((b) => ({ color: b.category.color, value: b.amount }))}
+            slices={breakdown.map((b) => ({ id: b.category.id, color: b.category.color, value: b.amount }))}
             centerLabel={netBalanceLabel}
             onAddClick={() => router.push('/dashboard/expenses/new')}
+            onSliceClick={setSelectedSliceId}
           />
         )}
       </div>
@@ -536,6 +540,16 @@ export default function DashboardPage() {
             setPayingRecurring(null);
             setRefreshTick((t) => t + 1);
           }}
+        />
+      )}
+
+      {selectedSlice && (
+        <CategorySliceSheet
+          category={selectedSlice.category}
+          amount={selectedSlice.amount}
+          percent={selectedSlice.percent}
+          showUsd={showUsd}
+          onClose={() => setSelectedSliceId(null)}
         />
       )}
 

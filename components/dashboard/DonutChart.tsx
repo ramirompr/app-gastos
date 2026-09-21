@@ -1,6 +1,7 @@
 import { PlusIcon } from '@/components/icons/PlusIcon';
 
 interface DonutSlice {
+  id: string;
   color: string;
   value: number;
 }
@@ -9,6 +10,8 @@ interface DonutChartProps {
   slices: DonutSlice[];
   centerLabel: string;
   onAddClick: () => void;
+  /** Se dispara al tocar un segmento del anillo (no el centro ni el botón +). */
+  onSliceClick?: (id: string) => void;
 }
 
 const SIZE = 220;
@@ -37,7 +40,7 @@ function arcPath(startDeg: number, endDeg: number) {
   return `M ${start.x} ${start.y} A ${RADIUS} ${RADIUS} 0 ${largeArc} 1 ${end.x} ${end.y}`;
 }
 
-export function DonutChart({ slices, centerLabel, onAddClick }: DonutChartProps) {
+export function DonutChart({ slices, centerLabel, onAddClick, onSliceClick }: DonutChartProps) {
   const total = slices.reduce((sum, s) => sum + s.value, 0);
   const visibleSlices = slices.filter((s) => s.value > 0);
 
@@ -50,7 +53,13 @@ export function DonutChart({ slices, centerLabel, onAddClick }: DonutChartProps)
           const endDeg = cumulativeDeg + sweep;
           cumulativeDeg = endDeg;
           const overlap = visibleSlices.length > 1 ? OVERLAP_DEG : 0;
-          return { color: slice.color, startDeg: startDeg - overlap / 2, endDeg: endDeg + overlap / 2, key: i };
+          return {
+            id: slice.id,
+            color: slice.color,
+            startDeg: startDeg - overlap / 2,
+            endDeg: endDeg + overlap / 2,
+            key: i,
+          };
         })
       : [];
 
@@ -66,7 +75,16 @@ export function DonutChart({ slices, centerLabel, onAddClick }: DonutChartProps)
           strokeWidth={STROKE}
         />
         {arcs.length === 1 ? (
-          <circle cx={CENTER} cy={CENTER} r={RADIUS} fill="none" stroke={arcs[0].color} strokeWidth={STROKE} />
+          <circle
+            cx={CENTER}
+            cy={CENTER}
+            r={RADIUS}
+            fill="none"
+            stroke={arcs[0].color}
+            strokeWidth={STROKE}
+            className={onSliceClick ? 'cursor-pointer' : undefined}
+            onClick={() => onSliceClick?.(arcs[0].id)}
+          />
         ) : (
           arcs.map((arc) => (
             <path
@@ -75,6 +93,8 @@ export function DonutChart({ slices, centerLabel, onAddClick }: DonutChartProps)
               fill="none"
               stroke={arc.color}
               strokeWidth={STROKE}
+              className={onSliceClick ? 'cursor-pointer' : undefined}
+              onClick={() => onSliceClick?.(arc.id)}
             />
           ))
         )}
