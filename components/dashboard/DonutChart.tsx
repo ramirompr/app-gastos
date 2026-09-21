@@ -14,51 +14,70 @@ interface DonutChartProps {
 const SIZE = 220;
 const STROKE = 30;
 const RADIUS = (SIZE - STROKE) / 2;
-const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+const CENTER = SIZE / 2;
 const PAD = 24;
 const WRAPPER = SIZE + PAD * 2;
-// Pequeño solapamiento entre segmentos para tapar la costura de anti-aliasing
-// que algunos navegadores mobile dejan ver entre dos <circle> con dasharray
-// contiguos (se nota como una línea fina del color de fondo cortando el arco).
-const SEAM_OVERLAP = 1.5;
+// Solapamiento angular entre segmentos contiguos: sin esto, algunos
+// navegadores mobile dejan ver una costura de anti-aliasing (una línea fina
+// del color de fondo) en el borde entre dos arcos, más notoria cuanto más
+// chico es el segmento. Cada arco se dibuja un poco más largo de lo que le
+// corresponde para taparla.
+const OVERLAP_DEG = 2;
+
+/** Punto sobre el círculo para un ángulo en grados, medido en sentido horario desde las 12. */
+function pointAt(angleDeg: number) {
+  const rad = ((angleDeg - 90) * Math.PI) / 180;
+  return { x: CENTER + RADIUS * Math.cos(rad), y: CENTER + RADIUS * Math.sin(rad) };
+}
+
+function arcPath(startDeg: number, endDeg: number) {
+  const start = pointAt(startDeg);
+  const end = pointAt(endDeg);
+  const largeArc = endDeg - startDeg > 180 ? 1 : 0;
+  return `M ${start.x} ${start.y} A ${RADIUS} ${RADIUS} 0 ${largeArc} 1 ${end.x} ${end.y}`;
+}
 
 export function DonutChart({ slices, centerLabel, onAddClick }: DonutChartProps) {
   const total = slices.reduce((sum, s) => sum + s.value, 0);
+  const visibleSlices = slices.filter((s) => s.value > 0);
 
-  let cumulative = 0;
-  const arcs = slices.map((slice, i) => {
-    const fraction = total > 0 ? slice.value / total : 0;
-    const dash = fraction * CIRCUMFERENCE;
-    const offset = cumulative * CIRCUMFERENCE;
-    cumulative += fraction;
-    return { ...slice, dash, offset, key: i };
-  });
+  let cumulativeDeg = 0;
+  const arcs =
+    total > 0
+      ? visibleSlices.map((slice, i) => {
+          const sweep = (slice.value / total) * 360;
+          const startDeg = cumulativeDeg;
+          const endDeg = cumulativeDeg + sweep;
+          cumulativeDeg = endDeg;
+          const overlap = visibleSlices.length > 1 ? OVERLAP_DEG : 0;
+          return { color: slice.color, startDeg: startDeg - overlap / 2, endDeg: endDeg + overlap / 2, key: i };
+        })
+      : [];
 
   return (
     <div className="relative flex items-center justify-center" style={{ width: WRAPPER, height: WRAPPER }}>
-      <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} className="-rotate-90">
+      <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}>
         <circle
-          cx={SIZE / 2}
-          cy={SIZE / 2}
+          cx={CENTER}
+          cy={CENTER}
           r={RADIUS}
           fill="none"
           stroke="#1e293b"
           strokeWidth={STROKE}
         />
-        {total > 0 &&
+        {arcs.length === 1 ? (
+          <circle cx={CENTER} cy={CENTER} r={RADIUS} fill="none" stroke={arcs[0].color} strokeWidth={STROKE} />
+        ) : (
           arcs.map((arc) => (
-            <circle
+            <path
               key={arc.key}
-              cx={SIZE / 2}
-              cy={SIZE / 2}
-              r={RADIUS}
+              d={arcPath(arc.startDeg, arc.endDeg)}
               fill="none"
               stroke={arc.color}
               strokeWidth={STROKE}
-              strokeDasharray={`${arc.dash + SEAM_OVERLAP} ${CIRCUMFERENCE - arc.dash}`}
-              strokeDashoffset={-arc.offset}
             />
-          ))}
+          ))
+        )}
       </svg>
 
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
