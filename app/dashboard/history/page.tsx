@@ -295,7 +295,7 @@ function ExpenseRow({
   return (
     <div
       onClick={onEdit}
-      className="bg-slate-800/60 rounded-xl px-4 py-3 flex flex-col gap-2 cursor-pointer hover:bg-slate-800 active:scale-[0.98] transition-all"
+      className="bg-slate-800/60 rounded-xl px-4 py-3 flex flex-col gap-2 cursor-pointer hover:bg-slate-800 active:bg-slate-700 transition-colors"
     >
       <div className="flex items-center gap-3">
         {category && (
