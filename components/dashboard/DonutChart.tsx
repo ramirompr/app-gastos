@@ -17,6 +17,10 @@ const RADIUS = (SIZE - STROKE) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 const PAD = 24;
 const WRAPPER = SIZE + PAD * 2;
+// Pequeño solapamiento entre segmentos para tapar la costura de anti-aliasing
+// que algunos navegadores mobile dejan ver entre dos <circle> con dasharray
+// contiguos (se nota como una línea fina del color de fondo cortando el arco).
+const SEAM_OVERLAP = 1.5;
 
 export function DonutChart({ slices, centerLabel, onAddClick }: DonutChartProps) {
   const total = slices.reduce((sum, s) => sum + s.value, 0);
@@ -51,7 +55,7 @@ export function DonutChart({ slices, centerLabel, onAddClick }: DonutChartProps)
               fill="none"
               stroke={arc.color}
               strokeWidth={STROKE}
-              strokeDasharray={`${arc.dash} ${CIRCUMFERENCE - arc.dash}`}
+              strokeDasharray={`${arc.dash + SEAM_OVERLAP} ${CIRCUMFERENCE - arc.dash}`}
               strokeDashoffset={-arc.offset}
             />
           ))}

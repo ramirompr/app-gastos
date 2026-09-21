@@ -231,14 +231,10 @@ export default function DashboardPage() {
   const total = breakdown.reduce((sum, b) => sum + b.amount, 0);
   const totalIncome = pickAmount(incomeArs, incomeUsd, showUsd);
   const netBalance = totalIncome - total;
-  // Math.abs() solo, sin signo, hacía que un saldo a favor y uno en contra
-  // se vieran idénticos en el centro del donut — justo el dato que ese
-  // número está ahí para mostrar. "+" sigue la misma convención que ya usan
-  // los ingresos en el listado (ver ExpenseRow en history/page.tsx).
-  const netBalanceLabel = `${netBalance < 0 ? '-' : netBalance > 0 ? '+' : ''}${formatMoney(
-    Math.abs(netBalance),
-    showUsd
-  )}`;
+  // Sin "+" para saldo a favor, un saldo a favor y uno en contra se verían
+  // idénticos en el centro del donut. El "-" para saldo en contra se omite
+  // a pedido explícito del usuario (es el caso normal: gastos > ingresos).
+  const netBalanceLabel = `${netBalance > 0 ? '+' : ''}${formatMoney(Math.abs(netBalance), showUsd)}`;
 
   const handlePrev = () => setAnchor((a) => shiftAnchor(period, a, -1));
   const handleNext = () => {
