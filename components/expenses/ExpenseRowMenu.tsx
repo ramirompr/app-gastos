@@ -32,12 +32,13 @@ export function ExpenseRowMenu({ label, onEdit, onDelete }: ExpenseRowMenuProps)
   };
 
   return (
-    <>
+    // `contents` para no alterar el layout flex de la fila, pero sí frenar acá
+    // cualquier click (menú, sheet de confirmar borrado) para que no le llegue
+    // al onClick={onEdit} de la fila entera (los sheets, aunque se vean fixed
+    // sobre toda la pantalla, siguen siendo descendientes del DOM de la fila).
+    <div className="contents" onClick={(e) => e.stopPropagation()}>
       <button
-        onClick={(e) => {
-          e.stopPropagation();
-          setSheet('menu');
-        }}
+        onClick={() => setSheet('menu')}
         aria-label="Opciones"
         className="w-7 h-7 flex items-center justify-center text-slate-500 hover:text-slate-300 rounded-lg hover:bg-slate-700 transition flex-shrink-0"
       >
@@ -91,6 +92,6 @@ export function ExpenseRowMenu({ label, onEdit, onDelete }: ExpenseRowMenuProps)
           </div>
         </BottomSheet>
       )}
-    </>
+    </div>
   );
 }

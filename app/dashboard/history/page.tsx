@@ -293,7 +293,10 @@ function ExpenseRow({
   const isIncome = expense.type === 'income';
 
   return (
-    <div className="bg-slate-800/60 rounded-xl px-4 py-3 flex flex-col gap-2">
+    <div
+      onClick={onEdit}
+      className="bg-slate-800/60 rounded-xl px-4 py-3 flex flex-col gap-2 cursor-pointer hover:bg-slate-800 active:scale-[0.98] transition-all"
+    >
       <div className="flex items-center gap-3">
         {category && (
           <div
@@ -335,7 +338,10 @@ function ExpenseRow({
           </div>
           {!expense.is_settled && (
             <button
-              onClick={onSettle}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSettle();
+              }}
               disabled={isPending}
               title={isPending ? 'Esperá a que se resuelva la cotización pendiente' : undefined}
               className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 disabled:opacity-50"
