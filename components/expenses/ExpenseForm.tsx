@@ -29,6 +29,13 @@ const SPLIT_OPTIONS: { value: SplitType; label: string }[] = [
   { value: 'shared', label: 'Compartido' },
 ];
 
+const SPLIT_FRACTIONS = [2, 3, 4, 5] as const;
+type SplitFraction = (typeof SPLIT_FRACTIONS)[number] | 'custom';
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 const MOVEMENT_TYPE_OPTIONS: { value: MovementType; label: string }[] = [
   { value: 'expense', label: 'Gasto' },
   { value: 'income', label: 'Ingreso' },
@@ -58,7 +65,18 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
   const [movementType, setMovementType] = useState<MovementType>(expense?.type ?? 'expense');
   const isIncome = movementType === 'income';
 
-  const [amount, setAmount] = useState(expense ? String(expense.amount) : '');
+  // Un gasto compartido ya saldado quedó guardado "neto" por
+  // settleSharedExpense: amount = tu parte (total - lo devuelto) y
+  // partner_share = lo que te devolvieron. Para editarlo reconstruimos el
+  // total original (amount + partner_share) y al guardar volvemos a
+  // persistirlo neto.
+  const isSettledShared = !!expense && expense.split_type === 'shared' && expense.is_settled;
+
+  const [amount, setAmount] = useState(() => {
+    if (!expense) return '';
+    if (isSettledShared) return String(expense.amount + (expense.partner_share ?? 0));
+    return String(expense.amount);
+  });
   const [currency, setCurrency] = useState<'ARS' | 'USD'>(expense?.currency ?? 'ARS');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(
     expense?.category_id ?? null
@@ -84,13 +102,27 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
     // "sin cargar". Un chequeo `!expense.partner_share` trataría ambos casos
     // igual y dejaría el campo vacío, bloqueando el guardado al editar.
     if (expense?.partner_share == null) return '';
+    if (isSettledShared) return String(expense.amount);
     if (expense.split_type === 'shared') return String(expense.amount - expense.partner_share);
     return String(expense.partner_share);
   });
   const [sharedWith, setSharedWith] = useState(expense?.shared_with ?? '');
 
+  // Atajo para "compartido": dividir el total en partes iguales (tu parte =
+  // total / n). 'custom' muestra el input para tipear tu parte a mano. Al
+  // editar se preselecciona la fracción si tu parte coincide con alguna.
+  const [splitFraction, setSplitFraction] = useState<SplitFraction | null>(() => {
+    if (!expense || expense.split_type !== 'shared' || expense.partner_share == null) return null;
+    const total = isSettledShared ? expense.amount + expense.partner_share : expense.amount;
+    const yourPart = isSettledShared ? expense.amount : expense.amount - expense.partner_share;
+    return (
+      SPLIT_FRACTIONS.find((n) => Math.abs(round2(total / n) - yourPart) < 0.01) ?? 'custom'
+    );
+  });
+
   const handleSplitTypeChange = (value: SplitType) => {
     setSplitType(value);
+    setSplitFraction(null);
     setPartnerShare('');
     setSharedWith('');
     clearFieldError('partnerShare');
@@ -150,6 +182,17 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
   }, [dateOption, customDate]);
 
   const parsedAmount = parseFloat(amount) || 0;
+  // Sigue saldado solo si no lo pasaste a personal/invitado.
+  const keepSettled = isSettledShared && splitType === 'shared';
+  // Con una fracción elegida, tu parte sale del total (y se recalcula si
+  // cambia el monto); si no, es lo tipeado en el input.
+  const effectivePartnerShare =
+    splitType === 'shared' && typeof splitFraction === 'number'
+      ? parsedAmount > 0
+        ? String(round2(parsedAmount / splitFraction))
+        : ''
+      : partnerShare;
+  const returnedPreview = parsedAmount - (parseFloat(effectivePartnerShare) || 0);
 
   const effectiveInstallments = customInstallments
     ? parseInt(customInstallmentsValue, 10)
@@ -176,7 +219,7 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
 
     // Lo que se tipeó en el campo: para "shared" es tu propia parte del
     // gasto, para "invited" es el monto que invitaste.
-    const partnerShareInput = parseFloat(partnerShare) || 0;
+    const partnerShareInput = parseFloat(effectivePartnerShare) || 0;
     // Lo que efectivamente se guarda en partner_share (DB): para "shared" es
     // lo que te deben devolver (total - tu parte), para "invited" es el
     // monto invitado tal cual.
@@ -189,9 +232,22 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
     if (!selectedCategory) {
       errors.category = 'Elegí una categoría';
     }
-    if (splitType !== 'personal' && partnerShareInput <= 0) {
+    // Saldado: tu parte puede ser 0 (te devolvieron todo), igual que permite
+    // settleSharedExpense.
+    // Con una fracción elegida y sin monto, el error ya lo marca el monto.
+    const fractionChosen = splitType === 'shared' && typeof splitFraction === 'number';
+    const partnerShareMissing = fractionChosen
+      ? false
+      : keepSettled
+        ? effectivePartnerShare.trim() === ''
+        : partnerShareInput <= 0;
+    if (splitType !== 'personal' && partnerShareMissing) {
       errors.partnerShare =
-        splitType === 'shared' ? 'Ingresá tu parte de este gasto' : 'Ingresá cuánto invitaste';
+        splitType === 'invited'
+          ? 'Ingresá cuánto invitaste'
+          : splitFraction === 'custom'
+            ? 'Ingresá tu parte de este gasto'
+            : 'Elegí cómo se divide el gasto';
     } else if (splitType !== 'personal' && partnerShareInput > parsedAmount) {
       errors.partnerShare =
         splitType === 'shared'
@@ -218,8 +274,11 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
         // A diferencia de la creación, en una edición no queremos degradar
         // silenciosamente un gasto ya resuelto a "pendiente" si la cotización
         // falla: mejor abortar el guardado y mostrar el error (catch de abajo).
+        // Si sigue saldado se guarda neto (solo tu parte), igual que lo deja
+        // settleSharedExpense.
+        const storedAmount = keepSettled ? partnerShareInput : parsedAmount;
         const { amount_ars, amount_usd, exchange_rate_used } = await calculateAmountsInBothCurrencies(
-          parsedAmount,
+          storedAmount,
           currency,
           selectedDate
         );
@@ -229,7 +288,7 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
           .update({
             category_id: selectedCategory.id,
             description,
-            amount: parsedAmount,
+            amount: storedAmount,
             currency,
             amount_ars,
             amount_usd,
@@ -239,6 +298,9 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
             split_type: splitType,
             partner_share: splitType !== 'personal' ? partnerShareTotal : null,
             shared_with: splitType === 'shared' ? sharedWith.trim() || null : null,
+            // Pasarlo a personal/invitado deshace la liquidación: el monto
+            // vuelve a guardarse como total.
+            ...(isSettledShared && !keepSettled ? { is_settled: false, settled_at: null } : {}),
           })
           .eq('id', expense!.id);
         if (updateError) throw updateError;
@@ -545,6 +607,36 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
                 {fieldErrors.partnerShare && (
                   <p className="text-red-400 text-xs font-medium mt-3">{fieldErrors.partnerShare}</p>
                 )}
+                {splitType === 'shared' && (
+                  <div className={`flex gap-2 ${fieldErrors.partnerShare ? 'mt-1' : 'mt-3'}`}>
+                    {[...SPLIT_FRACTIONS, 'custom' as const].map((opt) => (
+                      <button
+                        key={opt}
+                        onClick={() => {
+                          // Al pasar a "Otro" el input arranca vacío (pedido
+                          // explícito), no con la parte de la fracción previa.
+                          if (opt === 'custom' && splitFraction !== 'custom') setPartnerShare('');
+                          setSplitFraction(opt);
+                          clearFieldError('partnerShare');
+                        }}
+                        className={`flex-1 py-2 rounded-xl text-sm font-medium transition ${
+                          splitFraction === opt ? 'bg-violet-600 text-white' : 'bg-slate-800 text-slate-400'
+                        }`}
+                      >
+                        {opt === 'custom' ? 'Otro' : `1/${opt}`}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {splitType === 'shared' && typeof splitFraction === 'number' && parsedAmount > 0 && (
+                  <p className="mt-3 text-xs text-slate-400">
+                    Tu parte: {(parseFloat(effectivePartnerShare) || 0).toLocaleString('es-AR')} {currency}
+                    {!keepSettled && (
+                      <> · Te deben: {returnedPreview.toLocaleString('es-AR')} {currency}</>
+                    )}
+                  </p>
+                )}
+                {(splitType === 'invited' || splitFraction === 'custom') && (
                 <MoneyInput
                   placeholder={splitType === 'shared' ? 'Tu parte de este gasto' : 'Cuánto invitaste'}
                   value={partnerShare}
@@ -553,11 +645,12 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
                     clearFieldError('partnerShare');
                   }}
                   className={`w-full px-4 py-3 bg-slate-800 border rounded-xl text-white placeholder-slate-500 focus:outline-none transition ${
-                    fieldErrors.partnerShare
-                      ? 'mt-1 border-red-500'
-                      : 'mt-3 border-slate-700 focus:border-violet-500'
+                    fieldErrors.partnerShare && splitType === 'invited' ? 'mt-1' : 'mt-3'
+                  } ${
+                    fieldErrors.partnerShare ? 'border-red-500' : 'border-slate-700 focus:border-violet-500'
                   }`}
                 />
+                )}
               </>
             )}
             {splitType === 'shared' && (
@@ -568,6 +661,15 @@ export function ExpenseForm({ expense }: ExpenseFormProps) {
                 onChange={(e) => setSharedWith(e.target.value)}
                 className="mt-3 w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:border-violet-500 focus:outline-none transition"
               />
+            )}
+            {keepSettled && (
+              <p className="mt-3 text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-4 py-3">
+                ✓ Ya está marcado como pagado
+                {expense?.settled_at
+                  ? ` el ${format(new Date(expense.settled_at), "d 'de' MMMM", { locale: es })}`
+                  : ''}
+                . Te devolvieron {returnedPreview.toLocaleString('es-AR')} {currency}.
+              </p>
             )}
           </div>
         )}
